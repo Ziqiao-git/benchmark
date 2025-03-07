@@ -7,16 +7,13 @@ from gemini_model import GeminiChatModel
 from chatgpt_model import ChatGPTChatModel
 
 def main():
-    # 1) Domain for Bot A to challenge Bot B
     domain = "Frontiers in Physics"
     
-    # 2) Instantiate each model (Bot A, Bot B, Judge A, Judge B)
     bot_a = DeepSeekChatModel(model="deepseek-reasoner")
     bot_b = ChatGPTChatModel(model="o1")
     judge_a = XAIChatModel(model="grok-2")
     judge_b = GeminiChatModel(model="gemini-2.0-flash")
 
-    # 3) System instructions for Bot A (quizmaster) and Bot B (student)
     bot_a_messages = [
         (
             "system",
@@ -43,42 +40,35 @@ def main():
         )
     ]
 
-    # Initial user prompt to Bot A
     intro_msg = f"Hello Bot A, please quiz Bot B in the domain of {domain}"
     bot_a_messages.append(("user", intro_msg))
 
-    # We'll collect each round's logs here (the conversation between A & B, excluding judges).
     battle_history = []
 
-    # 4) Multi-turn loop
-    N = 5  # number of Q&A rounds
+    N = 5  
     for turn in range(N):
         print(f"\n=== Round {turn+1} ===")
 
-        # a) Bot A's question => call DeepSeek
         bot_a_reply = bot_a.generate_messages(bot_a_messages)
         bot_a_messages.append(("assistant", bot_a_reply))
 
-        # Print Bot A's question
+
         print("Bot A (DeepSeek) asks:\n")
         print(bot_a_reply, "\n")
 
-        # Provide question to Bot B
+
         bot_b_messages.append(("user", bot_a_reply))
 
-        # b) Bot B's answer => call Claude
+
         bot_b_reply = bot_b.generate_messages(bot_b_messages)
         bot_b_messages.append(("assistant", bot_b_reply))
 
-        # Print Bot B's answer
         print("Bot B (Claude) answers:\n")
         print(bot_b_reply, "\n")
 
-        # Provide Bot B's answer back to Bot A if there are more rounds
         if turn < N - 1:
             bot_a_messages.append(("user", bot_b_reply))
         
-        # c) Let the "Judge Team" evaluate
         judge_prompt = (
             f"Judge this question/answer pair:\n"
             f"Question (Bot A): {bot_a_reply}\n"
@@ -91,7 +81,7 @@ def main():
             "6) Do you think Bot A is taking the right approach in stumping Bot B? Rate 1-10.\n"
         )
 
-        # xAI judge
+        #Judge A
         xai_judge_opinion = judge_a.generate_messages([
             ("system", "You are a strict, unbiased judge."),
             ("user", judge_prompt)
@@ -99,24 +89,20 @@ def main():
         print("Judge A (xAI) says:\n")
         print(xai_judge_opinion, "\n")
 
-        # Gemini judge
+        #Judge B
         gemini_judge_opinion = judge_b.generate_messages([
             ("system", "You are a strict, unbiased judge."),
             ("user", judge_prompt)
         ])
         print("Judge B (Gemini) says:\n")
         print(gemini_judge_opinion, "\n")
-
-        # Store the entire round log in battle_history (just A & B if you prefer)
         round_log = (
             f"=== Round {turn+1} ===\n"
             f"**Bot A's question**:\n{bot_a_reply}\n\n"
             f"**Bot B's answer**:\n{bot_b_reply}\n"
         )
         battle_history.append(round_log)
-    
-    # 5) Final summary from both judges, with entire conversation
-    # Combine all round logs
+
     all_rounds_text = "\n\n".join(battle_history)
 
     final_prompt = (
