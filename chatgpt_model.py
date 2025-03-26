@@ -4,9 +4,6 @@ from langchain.chat_models import ChatOpenAI
 
 import os
 from dotenv import load_dotenv
-# Instead of importing ChatOpenAI from 'langchain', do as recommended: 
-# from langchain_community.chat_models import ChatOpenAI
-# or from langchain_openai import ChatOpenAI
 from base import ChatModelInterface
 
 load_dotenv()
@@ -18,7 +15,6 @@ class ChatGPTChatModel(ChatModelInterface):
         model: str = "gpt-3.5-turbo",
         **model_kwargs
     ):
-        # If you know your custom model "o1" won't allow 'temperature', remove it:
 
         if openai_api_key is None:
             openai_api_key = os.getenv("OPENAI_API_KEY", "")
