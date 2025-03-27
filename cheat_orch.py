@@ -63,7 +63,7 @@ def main():
 
 
         # Normal generation from the Bot A model
-        bot_a_reply = bot_a.generate_messages(bot_a_messages)
+        bot_a_reply = bot_a.generate_messages_json_botA(bot_a_messages)
         bot_a_messages.append(("assistant", bot_a_reply + "please do not give any other words than the current question itself, tactics and explanation should be given after bot B's answer (which is the last question), Now only give one question now"
        +  "Also if you notice there are fake question given before, then stop asking fake question, focusing on the real question"))
 
@@ -75,7 +75,7 @@ def main():
         bot_b_messages.append(("user", bot_a_reply))
 
         # b) Bot B's answer => call ChatGPT (or your chosen Bot B model)
-        bot_b_reply = bot_b.generate_messages_json(bot_b_messages)
+        bot_b_reply = bot_b.generate_messages_json_botB(bot_b_messages)
         bot_b_messages.append(("assistant", bot_b_reply))
 
         # Print Bot B's answer
@@ -105,7 +105,7 @@ def main():
         )
 
         # xAI judge
-        xai_judge_opinion = judge_a.generate_messages([
+        xai_judge_opinion = judge_a.generate_messages_json_judge([
             ("system", "You are a strict, unbiased judge."),
             ("user", judge_prompt)
         ])
@@ -113,7 +113,7 @@ def main():
         print(xai_judge_opinion, "\n")
 
         # Gemini judge
-        gemini_judge_opinion = judge_b.generate_messages([
+        gemini_judge_opinion = judge_b.generate_messages_json_judge([
             ("system", "You are a strict, unbiased judge."),
             ("user", judge_prompt)
         ])
@@ -145,11 +145,11 @@ def main():
 
     print("=== Asking Judges for Final Summaries ===\n")
 
-    xai_final = judge_a.generate_messages([
+    xai_final = judge_a.generate_messages_json_final_judge([
         ("system", "You are the final judge."),
         ("user", final_prompt)
     ])
-    gemini_final = judge_b.generate_messages([
+    gemini_final = judge_b.generate_messages_json_final_judge([
         ("system", "You are the final judge."),
         ("user", final_prompt)
     ])
