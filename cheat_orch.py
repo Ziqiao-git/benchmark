@@ -1,10 +1,10 @@
 # orchestration.py
 
-from Chat_models.deepseek_model import DeepSeekChatModel
-from Chat_models.claude_model import ClaudeChatModel
-from Chat_models.xai_model import XAIChatModel
-from Chat_models.gemini_model import GeminiChatModel
-from Chat_models.chatgpt_model import ChatGPTChatModel
+from deepseek_model import DeepSeekChatModel
+from claude_model import ClaudeChatModel
+from xai_model import XAIChatModel
+from gemini_model import GeminiChatModel
+from chatgpt_model import ChatGPTChatModel
 
 def main():
     # 1) Domain for Bot A to challenge Bot B
@@ -75,7 +75,7 @@ def main():
         bot_b_messages.append(("user", bot_a_reply))
 
         # b) Bot B's answer => call ChatGPT (or your chosen Bot B model)
-        bot_b_reply = bot_b.generate_messages(bot_b_messages)
+        bot_b_reply = bot_b.generate_messages_json(bot_b_messages)
         bot_b_messages.append(("assistant", bot_b_reply))
 
         # Print Bot B's answer
