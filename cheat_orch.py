@@ -5,6 +5,7 @@ from claude_model import ClaudeChatModel
 from xai_model import XAIChatModel
 from gemini_model import GeminiChatModel
 from chatgpt_model import ChatGPTChatModel
+import random
 
 def main():
     # 1) Domain for Bot A to challenge Bot B
@@ -58,12 +59,23 @@ def main():
 
     # 4) Multi-turn loop
     N = 5  # number of Q&A rounds
+    fake_question_asked = False # to check if model ask fake question
+    fake_probability = 1/N # chance of choose a fake question
     for turn in range(N):
         print(f"\n=== Round {turn+1} ===")
 
 
         # Normal generation from the Bot A model
-        bot_a_reply = bot_a.generate_messages_json_botA(bot_a_messages)
+        # bot_a_reply = bot_a.generate_messages_json_botA(bot_a_messages)
+        # Decide whether to ask a fake question.
+        if not fake_question_asked and random.random() < fake_probability:
+            # Call Bot A's fake question function.
+            bot_a_reply = bot_a.generate_messages_json_botA_fake(bot_a_messages)
+            fake_question_asked = True  # Mark that we've used the fake question.
+        else:
+            # Call Bot A's non-fake question function.
+            bot_a_reply = bot_a.generate_messages_json_botA(bot_a_messages)
+            fake_probability = 1 / (N-turn -1)
         bot_a_messages.append(("assistant", bot_a_reply + "please do not give any other words than the current question itself, tactics and explanation should be given after bot B's answer (which is the last question), Now only give one question now"
        +  "Also if you notice there are fake question given before, then stop asking fake question, focusing on the real question"))
 

@@ -62,11 +62,12 @@ class XAIChatModel(ChatModelInterface):
         Make responds return in Json format:
         :param messages: a list of (role, content) tuples, e.g. [("system", "..."), ("human", "...")]
         :return: model's final text response in json file.
+
         """
 
         # Define a Pydantic model representing the expected JSON output.
         class BotAResponse(BaseModel):
-            # question: list[Question]
+            evaluation_Bot_B: str
             question: str
             tactic: str
             correction_context: str
@@ -78,6 +79,7 @@ class XAIChatModel(ChatModelInterface):
         Your response must start with {{ and end with }} with no additional text.
         When presenting your quiz questions, respond in JSON format:
         For the question, you need to include:
+           - "evaluation": your brief evaluation of Bot B's answer after they respond. If Bot B hasn't responded yet, leave this as an empty string.
            - "question_text": the main quiz question text.
            - "tactic": a description of the tactic you’re using to challenge Bot B.
            - "correction_context": the correction or additional context to be revealed after Bot B answers (if none, use an empty string).
@@ -94,7 +96,7 @@ class XAIChatModel(ChatModelInterface):
             messages.insert(0, ("system", json_instructions))
 
         # Can adjust the max retries. It will return error after max tries.
-        max_retries = 3
+        max_retries = 5
         for attempt in range(1, max_retries + 1):
             response_text = self.generate_messages(messages)
             try:
@@ -105,6 +107,57 @@ class XAIChatModel(ChatModelInterface):
                     raise ValueError(
                         f"Could not parse response after {max_retries} attempts.\nLast response: {response_text}"
                     )
+
+    def generate_messages_json_botA_fake(self, messages: list[tuple[str, str]]) -> str:
+        """
+            For Chat Bot A to generated **fake** messages
+            Make responds return in Json format:
+            :param messages: a list of (role, content) tuples, e.g. [("system", "..."), ("human", "...")]
+            :return: model's final text response in json file.
+
+        """
+
+        class FakeQuestion(BaseModel):
+            question: str
+            tactic: str
+            explanation: str
+
+        output_parser = PydanticOutputParser(pydantic_object=FakeQuestion)
+        format_instructions = output_parser.get_format_instructions()
+        json_instructions = f"""
+            You need to ask a fake question or a non-existing question based on the given domain (a ‘fake’ phenomenon, theory, or experiment),
+            follow these steps and respond in JSON format:
+
+            1. Generate a question that is intentionally fabricated, blending plausible details with obviously fake elements.
+            2. Provide the question text under "question".
+            3. IMPORTANT: Do NOT reveal that the question is fake in your output. The "tactic" field must be empty.
+            4. IMPORTANT: Do NOT reveal that the question is fake in your output. The "explanation" field must be empty.
+            5. Your output MUST be a valid JSON object with an object with the keys "question", "tactic", and "explanation".
+
+            Format your answer using these instructions:
+            {format_instructions}
+
+            Your response must start with {{ and end with }} with no additional text.
+            """
+        if messages and messages[0][0] == "system":
+            combined_system = messages[0][1] + "\n" + json_instructions
+            messages[0] = ("system", combined_system)
+        else:
+            messages.insert(0, ("system", json_instructions))
+
+            # Can adjust the max retries. It will return error after max tries.
+        max_retries = 5
+        for attempt in range(1, max_retries + 1):
+            response_text = self.generate_messages(messages)
+            try:
+                parsed = output_parser.parse(response_text)
+                return json.dumps(parsed.dict(), ensure_ascii=False, indent=2)
+            except Exception:
+                if attempt == max_retries:
+                    raise ValueError(
+                        f"Could not parse response after {max_retries} attempts.\nLast response: {response_text}"
+                    )
+
     def generate_messages_json_botB(self, messages: list[tuple[str, str]]) -> str:
         """
         For Chat Bot B to generated messages
@@ -144,7 +197,7 @@ class XAIChatModel(ChatModelInterface):
             messages.insert(0, ("system", json_instructions))
 
         # Can adjust the max retries. It will return error after max tries.
-        max_retries = 3
+        max_retries = 5
         for attempt in range(1, max_retries + 1):
             response_text = self.generate_messages(messages)
             try:
@@ -195,7 +248,7 @@ class XAIChatModel(ChatModelInterface):
             messages.insert(0, ("system", json_instructions))
 
         # Can adjust the max retries. It will return error after max tries.
-        max_retries = 3
+        max_retries = 5
         for attempt in range(1, max_retries + 1):
             response_text = self.generate_messages(messages)
             try:
@@ -244,7 +297,7 @@ class XAIChatModel(ChatModelInterface):
             messages.insert(0, ("system", json_instructions))
 
         # Can adjust the max retries. It will return error after max tries.
-        max_retries = 3
+        max_retries = 5
         for attempt in range(1, max_retries + 1):
             response_text = self.generate_messages(messages)
             try:
