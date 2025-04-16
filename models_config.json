@@ -70,22 +70,19 @@
         "class": "LangChainAdapter"
       }
     },
-    "huggingface": {
-      "module": "langchain_community.chat_models",
-      "class": "ChatHuggingFace",
-      "params": {
-      "model_path": "${MODEL_PATH}",
-      "temperature": 0.7,
-      "max_length": 512,
-      "model_kwargs": {
-      "device_map": "auto",
-      "load_in_8bit": false,
-      "torch_dtype": null
-    }
-  },
-  "wrapper": {
+  "local_fallback": {
     "module": "adapters",
-    "class": "LangChainAdapter"
+    "class": "LocalModelHandler",
+    "params": {
+      "model_path": "${MODEL_PATH}",
+      "model_name": "${MODEL_NAME}",
+      "temperature": 0.7,
+      "max_tokens": 512,
+      "try_vllm_first": true
+    },
+    "wrapper": {
+      "module": "adapters",
+      "class": "LangChainAdapter"
+    }
   }
-}
   }

@@ -3,10 +3,11 @@ import os
 import json
 import importlib
 from dotenv import load_dotenv
+import logging
 
 load_dotenv()
 
-def get_chat_model(model_id, model_path=None, config_path="models_config.json"):
+def get_chat_model(model_id, model_path=None, model_name=None, config_path="models_config.json"):
     """
     Create a chat model instance based on configuration.
     
@@ -44,26 +45,35 @@ def get_chat_model(model_id, model_path=None, config_path="models_config.json"):
     # Prepare parameters
     params = model_config.get("params", {}).copy()  # Make a copy to avoid modifying the original
     
-    # Replace ${MODEL_PATH} placeholder with actual path if provided
+    # Replace placeholders with actual values
     if model_path and "model_path" in params and params["model_path"] == "${MODEL_PATH}":
         params["model_path"] = model_path
+
+    
+    if model_name and "model_name" in params and params["model_name"] == "${MODEL_NAME}":
+        params["model_name"] = model_name
+        
     
     # Add API key to parameters if available
     if api_key:
         api_key_param = model_config.get("api_key_param", "api_key")
         params[api_key_param] = api_key
     
-    # Initialize and return the model
-    model = model_class(**params)
-    
-    # Wrap model with common interface if needed
-    if "wrapper" in model_config:
-        wrapper_module_path = model_config["wrapper"]["module"]
-        wrapper_class_name = model_config["wrapper"]["class"]
+    try:
+        # Initialize the model
+        model = model_class(**params)
         
-        wrapper_module = importlib.import_module(wrapper_module_path)
-        wrapper_class = getattr(wrapper_module, wrapper_class_name)
+        # Wrap model with common interface if needed
+        if "wrapper" in model_config:
+            wrapper_module_path = model_config["wrapper"]["module"]
+            wrapper_class_name = model_config["wrapper"]["class"]
+            
+            wrapper_module = importlib.import_module(wrapper_module_path)
+            wrapper_class = getattr(wrapper_module, wrapper_class_name)
+            
+            return wrapper_class(model)
         
-        return wrapper_class(model)
-    
-    return model
+        return model
+    except Exception as e:
+        logging.error(f"Error initializing model {model_id}: {str(e)}")
+        raise

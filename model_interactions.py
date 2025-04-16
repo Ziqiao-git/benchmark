@@ -44,7 +44,7 @@ class ModelParticipant(ParticipantInterface):
         
         return response
     
-    def _format_messages(self, context: dict) -> List[Tuple[str, str]]:
+    def _format_messages(self, context: dict) -> List[tuple[str, str]]:
         """Format context into messages for the model."""
         messages = []
         
