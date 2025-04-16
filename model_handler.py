@@ -6,12 +6,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-def get_chat_model(model_id, config_path="models_config.json"):
+def get_chat_model(model_id, model_path=None, config_path="models_config.json"):
     """
     Create a chat model instance based on configuration.
     
     Args:
         model_id: The ID of the model in the config file
+        model_path: Optional path to model files (for HuggingFace models)
         config_path: Path to the configuration file
     
     Returns:
@@ -41,7 +42,11 @@ def get_chat_model(model_id, config_path="models_config.json"):
         api_key = os.getenv(api_key_env)
     
     # Prepare parameters
-    params = model_config.get("params", {})
+    params = model_config.get("params", {}).copy()  # Make a copy to avoid modifying the original
+    
+    # Replace ${MODEL_PATH} placeholder with actual path if provided
+    if model_path and "model_path" in params and params["model_path"] == "${MODEL_PATH}":
+        params["model_path"] = model_path
     
     # Add API key to parameters if available
     if api_key:
