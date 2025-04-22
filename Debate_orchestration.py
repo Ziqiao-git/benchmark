@@ -2,17 +2,18 @@ from model_handler import get_chat_model
 from model_interactions import ModelParticipant, Debate
 import json
 import datetime
+import os
 
-def simple_debate_example():
+def debate_orchestration(models, topic, rounds, project_name):
     # 1. Create two model participants for the debate
-    model_a = ModelParticipant("gpt4o", role="debater")
-    model_b = ModelParticipant("claude", role="debater")
+    model_a = ModelParticipant(models[0], role="debater")
+    model_b = ModelParticipant(models[1], role="debater")
     
     # 2. Define the debate topic
-    topic = "The future of renewable energy"
+    topic = topic
     
     # 3. Set up the debate with 2 rounds
-    debate = Debate(topic, [model_a, model_b], rounds=2)
+    debate = Debate(topic, [model_a, model_b], rounds=rounds)
     
     # 4. Run the debate
     results = debate.run()
@@ -23,8 +24,7 @@ def simple_debate_example():
     print(f"Number of entries: {len(results['transcript'])}")
     
     # 6. Save the results to a JSON file
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"debate_results_{timestamp}.json"
+    filename = f"{project_name}/debates/debate_results_{model_a.model_id}_{model_b.model_id}.json"
     
     # Create a more complete results dictionary
     full_results = {
@@ -38,6 +38,10 @@ def simple_debate_example():
         "results": results
     }
     
+
+    # Define filename only once
+    filename = f"{project_name}/debates/debate_results_{model_a.model_id}_{model_b.model_id}.json"
+    
     # Save to JSON file
     with open(filename, 'w') as f:
         json.dump(full_results, f, indent=2)
@@ -45,4 +49,5 @@ def simple_debate_example():
     print(f"\nResults saved to {filename}")
 
 if __name__ == "__main__":
-    simple_debate_example()
+    # here is a simple test
+    debate_orchestration(["gpt4o", "claude"], topic = "AI and the future of work", rounds = 2, project_name = "ai_and_work")

@@ -3,9 +3,7 @@ import numpy as np
 import copy
 import tqdm
 import csv
-from utils_final import existing_model_paths
 from multiprocessing import Pool, cpu_count
-import fire
 import random
 import uuid
 import scipy.stats
@@ -15,13 +13,6 @@ import os
 from tqdm import tqdm
 from scipy.stats import spearmanr
 import itertools
-from openai import OpenAI
-import google.generativeai as genai
-import anthropic
-from tokencost import calculate_completion_cost, calculate_prompt_cost
-from decimal import Decimal
-import sys
-import google.generativeai as genai
 import time
 import re
 from judge_responses import get_question_with_reference, judge_prompt_pair_reference, judge_prompt_pairwise, \
@@ -94,154 +85,9 @@ def update_voting_records(model, response_A_name, response_B_name, won, question
     # Save updated records back to the JSONL file
     save_to_jsonl(records, records_path)
 
-def run_judging_trials(judge_model, model_name, path="mt_bench_questions.jsonl", tensor_parallel_size=1):
-    # print(judge_model,model_name)
-    global openai_api
-    model_index_map = {name: idx for idx, name in enumerate(model_name)}
-    initial_question_ids = overall_ids
-    responses_dict = dict()
-    # Fetch responses for each model
-    for model in model_name:
-        responses_dict[model] = fetch_responses("mt_bench_responses", model)
-    # print(responses_dict)
-    combination_models = list(itertools.combinations(model_name, 2))
 
-    # Iterate over combinations of model pairs for comparison
-    for model_a, model_b in tqdm(combination_models):
-        responses_a = responses_dict[model_a]
-        responses_b = responses_dict[model_b]
 
-        batch_size = 40  # Set batch size for processing
-        num_batches = (len(initial_question_ids) + batch_size - 1) // batch_size  # Calculate the number of batches
 
-        for batch_idx in tqdm(range(num_batches)):
-            start_idx = batch_idx * batch_size
-            end_idx = min(start_idx + batch_size, len(initial_question_ids))
-            prompts = list()
-            swapped_prompts = list()
-            question_ids = list()
-
-            # Create prompts and swapped prompts for comparison
-            for idx in range(start_idx, end_idx):
-                question_id = initial_question_ids[idx]
-
-                question, reference = get_question_with_reference(path, question_id)
-                response_a = responses_a[idx]['response']
-                response_b = responses_b[idx]['response']
-                if reference != "":
-                    prompt = judge_prompt_pair_reference(question, response_a, response_b, reference)
-                    swapped_prompt = judge_prompt_pair_reference(question, response_b, response_a, reference)
-                else:
-                    prompt = judge_prompt_pairwise(question, response_a, response_b)
-                    swapped_prompt = judge_prompt_pairwise(question, response_b, response_a)
-                    # print(prompt)
-                # breakpoint()
-                prompts.append(prompt)
-                swapped_prompts.append(swapped_prompt)
-                question_ids.append(question_id)
-            try:
-                # Adjust logic based on the type of judge_model
-                if 'gpt' in judge_model or 'GPT' in judge_model or 'o1' in judge_model:  # For OpenAI models
-                    judge_responses = run_openai_model(openai_api, prompts, judge_model)
-                    swapped_judge_responses = run_openai_model(openai_api, swapped_prompts, judge_model)
-                elif "gemini" in judge_model:  # For Gemini models
-                    judge_responses = run_gemini_model(prompts, judge_model)
-                    swapped_judge_responses = run_gemini_model(swapped_prompts, judge_model)
-
-            except Exception as e:
-                print(f"Error evaluating model pair ({model_a}, {model_b}) with judge {judge_model}: {e}")
-                continue  # Skip to the next model pair if there's an error
-
-            cnt = 0
-            # Process responses and determine winners
-            for response, swapped_response in zip(judge_responses, swapped_judge_responses):
-                winner = determine_winner(response, model_a, model_b)
-                swapped_winner = determine_winner(swapped_response, model_b, model_a)
-                final_winner = winner if winner == swapped_winner else "TIE"
-                data_id = str(uuid.uuid4())
-                update_voting_records(judge_model, model_a, model_b, final_winner, question_ids[cnt], data_id)
-                cnt += 1
-
-def run_openai_model(openai_api, prompts, model_name, max_tokens=15):
-    print(openai_api)
-    # Handle model selection for OpenAI models
-    if "3.5-turbo-0125" in model_name:
-        model_name = "gpt-3.5-turbo-0125"
-        client = OpenAI(api_key=openai_api)
-    elif "gpt-4o-mini" in model_name:
-        model_name = "gpt-4o-mini-2024-07-18"
-        client = OpenAI(api_key=openai_api)
-    elif "gpt-4-turbo-2024-04-09" in model_name:
-        model_name = "gpt-4-turbo-2024-04-09"
-        client = OpenAI(api_key=openai_api)
-    elif "gpt-4o-2024-05-13" in model_name:
-        model_name = "gpt-4o-2024-05-13"
-        client = OpenAI(api_key=openai_api)
-    elif "ChatGPT-4o-latest" in model_name:
-        model_name = "chatgpt-4o-latest"
-        client = OpenAI(api_key=openai_api)
-    elif "gpt-4o-2024-08-06" in model_name:
-        model_name = "gpt-4o-2024-08-06"
-        client = OpenAI(api_key=openai_api)
-    elif "o1-mini" in model_name:
-        model_name = "o1-mini"
-        client = OpenAI(api_key=openai_api)
-    elif "o1-preview" in model_name:
-        model_name = "o1-preview"
-        client = OpenAI(api_key=openai_api)
-
-    responses = []
-    # Modify each prompt to ask the model to evaluate dataset quality
-    for prompt in prompts:
-        # Call OpenAI API with the modified quality evaluation prompt
-        completion = client.chat.completions.create(
-            model=model_name,
-            messages=[
-                {"role": "user", "content": prompt}
-            ],
-            max_completion_tokens=max_tokens
-        )
-
-        # Extract and store the response
-        text = completion.choices[0].message.content
-        responses.append(str(text))
-
-    return responses
-
-def run_gemini_model(prompts, model_name="gemini-1.5-flash", max_tokens=3):
-    if model_name == "gemini-1.5-pro-001":
-        model_name = "gemini-1.5-pro-001"
-        client = ''
-    elif model_name == "gemini-1.0-pro-001":
-        model_name = "gemini-1.0-pro-001"
-        client = ""
-    elif model_name == "gemini-1.5-flash-001":
-        model_name = "gemini-1.5-flash-001"
-        client = ""
-
-    responses = []
-    genai.configure(api_key=client)
-    model = genai.GenerativeModel(model_name)
-    for prompt in prompts:
-        cnt = 0
-        while 1:
-            cnt += 1
-            if cnt > 5:
-                responses.append("")
-                break
-            try:
-                message = model.generate_content(
-                    prompt
-                )
-                response_text = message.text
-                responses.append(response_text)
-                break
-            except Exception as e:
-                print(f"Error : {e}")
-                time.sleep(5)
-                continue
-
-    return responses
 
 def rugged_rank(base_dir, new_model, base_model_list, base_model_ranking, model_weights, judge_model_list, judge_model_states, valid_question_ids=overall_ids):
     final_binary_judge_dict = dict()
@@ -1176,4 +1022,4 @@ def main(base_dir="judgements_mt_bench", valid_question_ids=overall_ids):
     print(end_time - start_time)
 
 if __name__ == "__main__":
-    fire.Fire(main)
+    main()

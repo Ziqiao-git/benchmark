@@ -3,7 +3,7 @@ from model_interactions import ModelParticipant, Evaluation, JudgmentCriteria, F
 import json
 import datetime
 
-def judge_debate_results(json_file_path):
+def judge_orchestration(json_file_path, judges, project_name):
     # 1. Load the debate results from the JSON file
     with open(json_file_path, 'r') as f:
         debate_data = json.load(f)
@@ -16,10 +16,7 @@ def judge_debate_results(json_file_path):
     
     # 3. Create judge participants
     judges = [
-        ModelParticipant("grok", role="judge"),
-        ModelParticipant("gemini", role="judge"),
-        ModelParticipant("deepseek", role="judge"),
-        # You can add more judges if needed
+        ModelParticipant(judge, role="judge") for judge in judges
     ]
     
     # 4. Initialize the evaluation
@@ -35,8 +32,7 @@ def judge_debate_results(json_file_path):
     results = evaluation.run_battle()
     
     # 6. Save the evaluation results
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"evaluation_results_{timestamp}.json"
+    filename = f"{project_name}/judgements/evaluation_results_{model_a_id}_{model_b_id}.json"
     
     # Create a complete results dictionary
     full_results = {
