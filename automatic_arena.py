@@ -15,12 +15,24 @@ from scipy.stats import spearmanr
 import itertools
 import time
 import re
-from judge_responses import get_question_with_reference, judge_prompt_pair_reference, judge_prompt_pairwise, \
-    fetch_responses, determine_winner, load_records
 from sklearn.linear_model import LogisticRegression
 import pandas as pd
 import math
- 
+
+def load_records(filename):
+    with open(filename, 'r') as file:
+        return [json.loads(line.strip()) for line in file]
+    
+def fetch_responses(path,model):
+    directory = f"{path}/voting_records.jsonl"
+    with open(directory, 'r', encoding='utf-8') as file:
+        data = file.read()
+    
+    # Process the JSON to clean up and format correctly
+    data = data.strip().replace('}\n{', '},{')
+    data = f'[{data}]'  # Add square brackets to make it a valid JSON array
+    return json.loads(data)
+
 pd.set_option('display.max_rows', None)
 pd.set_option('display.max_columns', None)
 pd.set_option('display.width', None)
@@ -28,7 +40,7 @@ pd.set_option('display.max_colwidth', None)
 
 # 读取环境变量
 openai_api = os.getenv("OPENAI_API", "")
-overall_ids = list(range(501))
+overall_ids = list(range(1,1))
 save_output_file_path = os.getenv("SAVE_OUTPUT_FILE_PATH", "mt_bench ranking result.txt")
 
 judge_open_model = os.getenv("JUDGE_OPEN_MODEL", "").split(",") if os.getenv("JUDGE_OPEN_MODEL") else []
@@ -39,7 +51,7 @@ sort_model_list = os.getenv("SORT_MODEL_LIST", "").split(",")
 
 # 打印变量以检查是否正确传递
 print(f"OpenAI API: {openai_api}")
-print(f"Overall IDs: {overall_ids}")
+# print(f"Overall IDs: {overall_ids}")
 print(f"Save Output File Path: {save_output_file_path}")
 print(f"Judge Open Model: {judge_open_model}")
 print(f"Judge API Model: {judge_api_model}")
@@ -60,30 +72,30 @@ def save_to_jsonl(data, filename):
     with open(filename, 'w') as f:
         f.write(json.dumps(data) + '\n')
 
-def update_voting_records(model, response_A_name, response_B_name, won, question_id, data_id):
-    """Updates the voting records with a new voting result."""
-    records_path = f"judgements_mt_bench/{model}/voting_records.jsonl"
-    # Ensure the directory exists
-    os.makedirs(os.path.dirname(records_path), exist_ok=True)
+# def update_voting_records(model, response_A_name, response_B_name, won, question_id, data_id):
+#     """Updates the voting records with a new voting result."""
+#     records_path = f"judgements_mt_bench/{model}/voting_records.jsonl"
+#     # Ensure the directory exists
+#     os.makedirs(os.path.dirname(records_path), exist_ok=True)
 
-    # Load existing records or create an empty list if the file does not exist
-    try:
-        records = load_records(records_path)[0]
-    except:
-        records = []
+#     # Load existing records or create an empty list if the file does not exist
+#     try:
+#         records = load_records(records_path)[0]
+#     except:
+#         records = []
 
-    # Append a new record to the list of records
-    new_record = {
-        "response_A": response_A_name,
-        "response_B": response_B_name,
-        "Won": won,
-        "question_id": question_id,
-        "data_id": data_id
-    }
-    records.append(new_record)  # Ensure this is a flat append operation
+#     # Append a new record to the list of records
+#     new_record = {
+#         "response_A": response_A_name,
+#         "response_B": response_B_name,
+#         "Won": won,
+#         "question_id": question_id,
+#         "data_id": data_id
+#     }
+#     records.append(new_record)  # Ensure this is a flat append operation
 
-    # Save updated records back to the JSONL file
-    save_to_jsonl(records, records_path)
+#     # Save updated records back to the JSONL file
+#     save_to_jsonl(records, records_path)
 
 
 
@@ -151,6 +163,7 @@ def get_vote_result_for_judge(base_dir, judge_model, model1, model2, valid_quest
     tmp_judge_dict = dict()
     vote_diff = 0
     jsonl_path = os.path.join(base_dir, judge_model, "voting_records.jsonl")
+    print(jsonl_path)
     if judge_model in judge_open_model:
         if not os.path.exists(jsonl_path):
             directory = os.path.join(base_dir, judge_model)
@@ -169,12 +182,12 @@ def get_vote_result_for_judge(base_dir, judge_model, model1, model2, valid_quest
                             continue
                         if each['response_A'] == model1 and each['response_B'] == model2:
                             battle_id = len(tmp_judge_dict)
-                            response_A = fetch_responses("mt_bench_responses", model1)
-                            response_B = fetch_responses("mt_bench_responses", model2)
+                            response_A = fetch_responses(os.path.join(base_dir, model1), model1)
+                            response_B = fetch_responses(os.path.join(base_dir, model2), model2)
                             # print(response_A)
                             question_id = each.get('question_id')
-                            response_a = next((item['response'] for item in response_A if item['question_id'] == question_id), None)
-                            response_b = next((item['response'] for item in response_B if item['question_id'] == question_id), None)
+                            response_a = next((item['response'] for item in response_A), None)
+                            response_b = next((item['response'] for item in response_B), None)
                             dict_a = count_markdown_elements(response_a, '_a')
                             dict_b = count_markdown_elements(response_b, '_b')
                             metadata_dict = {**dict_a, **dict_b}
@@ -188,12 +201,12 @@ def get_vote_result_for_judge(base_dir, judge_model, model1, model2, valid_quest
                                 vote_diff -= 1
                         elif each['response_A'] == model2 and each['response_B'] == model1:
                             battle_id = len(tmp_judge_dict)
-                            response_A = fetch_responses("mt_bench_responses", model1)
-                            response_B = fetch_responses("mt_bench_responses", model2)
+                            response_A = fetch_responses(os.path.join(base_dir, model1), model1)
+                            response_B = fetch_responses(os.path.join(base_dir, model2), model2)
                             # print(response_A)
                             question_id = each.get('question_id')
-                            response_a = next((item['response'] for item in response_A if item['question_id'] == question_id), None)
-                            response_b = next((item['response'] for item in response_B if item['question_id'] == question_id), None)
+                            response_a = next((item['response'] for item in response_A), None)
+                            response_b = next((item['response'] for item in response_B), None)
                             dict_a = count_markdown_elements(response_a, '_a')
                             dict_b = count_markdown_elements(response_b, '_b')
                             metadata_dict = {**dict_a, **dict_b}
@@ -229,12 +242,12 @@ def get_vote_result_for_judge(base_dir, judge_model, model1, model2, valid_quest
                         if each['response_A'] == model1 and each['response_B'] == model2:
                             flag = True
                             battle_id = len(tmp_judge_dict)
-                            response_A = fetch_responses("mt_bench_responses", model1)
-                            response_B = fetch_responses("mt_bench_responses", model2)
+                            response_A = fetch_responses(os.path.join(base_dir, model1), model1)
+                            response_B = fetch_responses(os.path.join(base_dir, model2), model2)  
                             # print(response_A)
                             question_id = each.get('question_id')
-                            response_a = next((item['response'] for item in response_A if item['question_id'] == question_id), None)
-                            response_b = next((item['response'] for item in response_B if item['question_id'] == question_id), None)
+                            response_a = next((item['response'] for item in response_A), None)
+                            response_b = next((item['response'] for item in response_B), None)
                             dict_a = count_markdown_elements(response_a, '_a')
                             dict_b = count_markdown_elements(response_b, '_b')
                             metadata_dict = {**dict_a, **dict_b}
@@ -250,12 +263,12 @@ def get_vote_result_for_judge(base_dir, judge_model, model1, model2, valid_quest
                             flag = True
                             # print(each)
                             battle_id = len(tmp_judge_dict)
-                            response_A = fetch_responses("mt_bench_responses", model1)
-                            response_B = fetch_responses("mt_bench_responses", model2)
+                            response_A = fetch_responses(os.path.join(base_dir, model1), model1)
+                            response_B = fetch_responses(os.path.join(base_dir, model2), model2)
                             # print(response_A)
                             question_id = each.get('question_id')
-                            response_a = next((item['response'] for item in response_A if item['question_id'] == question_id), None)
-                            response_b = next((item['response'] for item in response_B if item['question_id'] == question_id), None)
+                            response_a = next((item['response'] for item in response_A), None)
+                            response_b = next((item['response'] for item in response_B), None)
                             dict_a = count_markdown_elements(response_a, '_a')
                             dict_b = count_markdown_elements(response_b, '_b')
                             metadata_dict = {**dict_a, **dict_b}
@@ -272,7 +285,6 @@ def get_vote_result_for_judge(base_dir, judge_model, model1, model2, valid_quest
                     # print(judge_model)
                     if 'gpt' in judge_model or "GPT" in judge_model or "o1" in judge_model:
                         # print(judge_model)
-                        run_judging_trials(judge_model, [model1, model2])
                         for line in file:
                             # print(jsonl_path)
                             record = json.loads(line)
@@ -282,12 +294,12 @@ def get_vote_result_for_judge(base_dir, judge_model, model1, model2, valid_quest
                                 if each['response_A'] == model1 and each['response_B'] == model2:
                                     flag = True
                                     battle_id = len(tmp_judge_dict)
-                                    response_A = fetch_responses("mt_bench_responses", model1)
-                                    response_B = fetch_responses("mt_bench_responses", model2)
+                                    response_A = fetch_responses(os.path.join(base_dir, model1), model1)
+                                    response_B = fetch_responses(os.path.join(base_dir, model2), model2)
                                     # print(response_A)
                                     question_id = each.get('question_id')
-                                    response_a = next((item['response'] for item in response_A if item['question_id'] == question_id), None)
-                                    response_b = next((item['response'] for item in response_B if item['question_id'] == question_id), None)
+                                    response_a = next((item['response'] for item in response_A), None)
+                                    response_b = next((item['response'] for item in response_B), None)
                                     dict_a = count_markdown_elements(response_a, '_a')
                                     dict_b = count_markdown_elements(response_b, '_b')
                                     metadata_dict = {**dict_a, **dict_b}
@@ -303,12 +315,12 @@ def get_vote_result_for_judge(base_dir, judge_model, model1, model2, valid_quest
                                     flag = True
                                     # print(each)
                                     battle_id = len(tmp_judge_dict)
-                                    response_A = fetch_responses("mt_bench_responses", model1)
-                                    response_B = fetch_responses("mt_bench_responses", model2)
+                                    response_A = fetch_responses(os.path.join(base_dir, model1), model1)
+                                    response_B = fetch_responses(os.path.join(base_dir, model2), model2)
                                     # print(response_A)
                                     question_id = each.get('question_id')
-                                    response_a = next((item['response'] for item in response_A if item['question_id'] == question_id), None)
-                                    response_b = next((item['response'] for item in response_B if item['question_id'] == question_id), None)
+                                    response_a = next((item['response'] for item in response_A), None)
+                                    response_b = next((item['response'] for item in response_B), None)
                                     dict_a = count_markdown_elements(response_a, '_a')
                                     dict_b = count_markdown_elements(response_b, '_b')
                                     metadata_dict = {**dict_a, **dict_b}
@@ -500,11 +512,11 @@ def pairwise_judge(base_dir, subdir, model_weights, sort_model_index_map, judge_
 
                         if idx1 is not None and idx2 is not None and judge_idx is not None:
                             battle_id = len(tmp_judge_dict)
-                            response_A = fetch_responses("mt_bench_responses", model1)
-                            response_B = fetch_responses("mt_bench_responses", model2)
+                            response_A = fetch_responses(os.path.join(base_dir, model1), model1)
+                            response_B = fetch_responses(os.path.join(base_dir, model2), model2)
                             question_id = each.get('question_id')
-                            response_a = next((item['response'] for item in response_A if item['question_id'] == question_id), None)
-                            response_b = next((item['response'] for item in response_B if item['question_id'] == question_id), None)
+                            response_a = next((item['response'] for item in response_A), None)
+                            response_b = next((item['response'] for item in response_B), None)
                             dict_a = count_markdown_elements(response_a, '_a')
                             dict_b = count_markdown_elements(response_b, '_b')
                             metadata_dict = {**dict_a, **dict_b}
@@ -546,12 +558,12 @@ def pairwise_judge(base_dir, subdir, model_weights, sort_model_index_map, judge_
                             remaining_combinations.discard((model1, model2))
                             remaining_combinations.discard((model2, model1))
                             battle_id = len(tmp_judge_dict)
-                            response_A = fetch_responses("mt_bench_responses", model1)
-                            response_B = fetch_responses("mt_bench_responses", model2)
+                            response_A = fetch_responses(os.path.join(base_dir, model1), model1)
+                            response_B = fetch_responses(os.path.join(base_dir, model2), model2)
                             # print(response_A)
                             question_id = each.get('question_id')
-                            response_a = next((item['response'] for item in response_A if item['question_id'] == question_id), None)
-                            response_b = next((item['response'] for item in response_B if item['question_id'] == question_id), None)
+                            response_a = next((item['response'] for item in response_A), None)
+                            response_b = next((item['response'] for item in response_B), None)
                             dict_a = count_markdown_elements(response_a, '_a')
                             dict_b = count_markdown_elements(response_b, '_b')
                             metadata_dict = {**dict_a, **dict_b}
@@ -590,12 +602,12 @@ def pairwise_judge(base_dir, subdir, model_weights, sort_model_index_map, judge_
                                 if idx1 is not None and idx2 is not None and judge_idx is not None:
                                     flag = True
                                     battle_id = len(tmp_judge_dict)
-                                    response_A = fetch_responses("mt_bench_responses", model1)
-                                    response_B = fetch_responses("mt_bench_responses", model2)
+                                    response_A = fetch_responses(os.path.join(base_dir, model1), model1)
+                                    response_B = fetch_responses(os.path.join(base_dir, model2), model2)
                                     # print(response_A)
                                     question_id = each.get('question_id')
-                                    response_a = next((item['response'] for item in response_A if item['question_id'] == question_id), None)
-                                    response_b = next((item['response'] for item in response_B if item['question_id'] == question_id), None)
+                                    response_a = next((item['response'] for item in response_A), None)
+                                    response_b = next((item['response'] for item in response_B), None)
                                     dict_a = count_markdown_elements(response_a, '_a')
                                     dict_b = count_markdown_elements(response_b, '_b')
                                     metadata_dict = {**dict_a, **dict_b}
@@ -666,6 +678,8 @@ def judge_continue_bubble(old_model_rank, new_model_rank, model_num):
 
 # 用来排名base model，第一步base model先进行full sample
 def base_model_judge(base_dir, base_model_list, valid_question_ids=overall_ids):
+    print("Base Dir",base_dir)
+    print("Base Model List HEre",base_model_list)
     judge_dict = dict()
     model_weights = {model: 1 for model in base_model_list}
     # print(judge_models)
@@ -674,7 +688,8 @@ def base_model_judge(base_dir, base_model_list, valid_question_ids=overall_ids):
     # print(judge_model_index_map)
 
     paras = list()
-    for subdir in base_model_list:
+    for i,subdir in enumerate(base_model_list):
+        print("Subdir ", i,subdir)
         models_to_sort = [model for model in base_model_list if model != subdir]
         print(models_to_sort)
         combinations = list(itertools.combinations(models_to_sort, 2))
@@ -857,7 +872,8 @@ def count_markdown_elements(markdown_text, suffix):
     }
     return counters
 
-def main(base_dir="judgements_mt_bench", valid_question_ids=overall_ids):
+def main(base_dir="ai_and_work/voting_records", valid_question_ids=overall_ids):
+    print("Base Dir",base_dir)
     global base_model_list
     global judge_model_list
     print(base_model_list)
@@ -867,14 +883,13 @@ def main(base_dir="judgements_mt_bench", valid_question_ids=overall_ids):
     judge_model_states = {model: list() for model in judge_model_list}
     judge_dict = base_model_judge(base_dir,base_model_list)
 
-    print(judge_dict)
+    print("Judge Dict",judge_dict)
     df = pd.DataFrame(judge_dict)
     df = df.T
     print(df.keys)
+    print(df)
     df = df[df["winner"] != 'TIE']
     df = df[df["winner"] != 'Tie']
-    # print(df)
-    print(len(df))
 
     init_elo_weight = {model:1 for model in base_model_list}
     X, Y, models, weights = construct_matrices(df,init_elo_weight)

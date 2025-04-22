@@ -84,6 +84,11 @@ def convert_benchmark_to_dearena(evaluation_files_pattern, output_dir="judgement
                 # Save updated records
                 with open(voting_records_path, 'w') as f:
                     f.write(json.dumps(existing_records))
+                standard_judge_dir = os.path.join(output_dir, judge_id)
+                os.makedirs(standard_judge_dir, exist_ok=True)
+                standard_voting_path = os.path.join(standard_judge_dir, "voting_records.jsonl")
+                with open(standard_voting_path, 'w') as f:
+                    f.write(json.dumps(existing_records))
                 
     print(f"Converted {len(evaluation_files)} Benchmark evaluation files to De-arena format")
 
