@@ -18,16 +18,17 @@ class ParticipantInterface(ABC):
 class ModelParticipant(ParticipantInterface):
     """Wrapper for LLM models to participate in debates/evaluations."""
     
-    def __init__(self, model_id: str, role: str = "participant"):
+    def __init__(self, model_id: str, role: str = "participant", **kwargs):
         """
         Initialize a model participant.
         
         Args:
             model_id: ID of model in config
             role: Role of this participant (debater, judge, etc.)
+            **kwargs: Additional arguments to pass to get_chat_model
         """
-        self.model = get_chat_model(model_id)
-        self.model_id = model_id
+        self.model = get_chat_model(model_id, **kwargs)
+        self.model_id = kwargs.get('custom_model_id', model_id)  # Use custom_model_id if provided
         self.role = role
         self.history = []
     

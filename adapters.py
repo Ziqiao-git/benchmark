@@ -44,6 +44,8 @@ class LocalModelHandler:
                 model=self.model_path,
                 temperature=self.temperature,
                 max_tokens=self.max_tokens,
+                tensor_parallel_size=8,  # Use all 8 GPUs
+                gpu_memory_utilization=0.85,  # Control memory usage
                 **self.kwargs
             )
         except ImportError:

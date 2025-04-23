@@ -6,8 +6,8 @@ import os
 
 def debate_orchestration(models, topic, rounds, project_name):
     # 1. Create two model participants for the debate
-    model_a = ModelParticipant(models[0], role="debater")
-    model_b = ModelParticipant(models[1], role="debater")
+    model_a = models[0]
+    model_b = models[1]
     
     # 2. Define the debate topic
     topic = topic

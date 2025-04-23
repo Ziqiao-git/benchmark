@@ -7,20 +7,20 @@ import logging
 
 load_dotenv()
 
-def get_chat_model(model_id, model_path=None, model_name=None, config_path="models_config.json"):
+# In model_handler.py
+def get_chat_model(model_id, **kwargs):
     """
     Create a chat model instance based on configuration.
     
     Args:
         model_id: The ID of the model in the config file
-        model_path: Optional path to model files (for HuggingFace models)
-        config_path: Path to the configuration file
+        **kwargs: Additional parameters to pass to the model
     
     Returns:
         An initialized chat model instance
     """
     # Load the configuration
-    with open(config_path, 'r') as f:
+    with open("models_config.json", 'r') as f:
         config = json.load(f)
     
     if model_id not in config:
@@ -43,16 +43,16 @@ def get_chat_model(model_id, model_path=None, model_name=None, config_path="mode
         api_key = os.getenv(api_key_env)
     
     # Prepare parameters
-    params = model_config.get("params", {}).copy()  # Make a copy to avoid modifying the original
+    params = model_config.get("params", {}).copy()
     
     # Replace placeholders with actual values
+    model_path = kwargs.get('model_path')
     if model_path and "model_path" in params and params["model_path"] == "${MODEL_PATH}":
         params["model_path"] = model_path
-
     
+    model_name = kwargs.get('model_name')
     if model_name and "model_name" in params and params["model_name"] == "${MODEL_NAME}":
         params["model_name"] = model_name
-        
     
     # Add API key to parameters if available
     if api_key:
