@@ -11,9 +11,9 @@ model_a = ModelParticipant("local_fallback",
 
 model_b = ModelParticipant("local_fallback", 
                           role="debater", 
-                          model_path="/lustre/scratch/users/guangyi.liu/ziqiao/models/Athene-V2-Chat", 
-                          model_name="aya-expanse-32b", 
-                          custom_model_id="aya-expanse-32b")
+                          model_path="/lustre/scratch/users/guangyi.liu/ziqiao/models/gemma-3-27b-it", 
+                          model_name="gemma-3-27b-it", 
+                          custom_model_id="gemma-3-27b-it")
 
 
 topic = "AI and the future of work"

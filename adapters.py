@@ -1,4 +1,6 @@
 # adapters.py
+import logging
+import os
 class LangChainAdapter:
     """Adapter for LangChain models to provide a consistent interface."""
     
