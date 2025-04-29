@@ -42,14 +42,70 @@
         "class": "LangChainAdapter"
       }
     },
-    "grok": {
+    "o3": {
+      "module": "langchain_openai",
+      "class": "ChatOpenAI",
+      "api_key_env": "OPENAI_API_KEY",
+      "api_key_param": "openai_api_key",
+      "params": {
+        "model_name": "o3-2025-04-16",
+        "temperature": 1
+      },
+      "wrapper": {
+        "module": "adapters",
+        "class": "LangChainAdapter"
+      }
+    },
+    "o4-mini": {
+      "module": "langchain_openai",
+      "class": "ChatOpenAI",
+      "api_key_env": "OPENAI_API_KEY",
+      "api_key_param": "openai_api_key",
+      "params": {
+        "model_name": "o4-mini-2025-04-16",
+        "temperature": 1
+      },
+      "wrapper": {
+        "module": "adapters",
+        "class": "LangChainAdapter"
+      }
+    },
+    "o1": {
+      "module": "langchain_openai",
+      "class": "ChatOpenAI",
+      "api_key_env": "OPENAI_API_KEY",
+      "api_key_param": "openai_api_key",
+      "params": {
+        "model_name": "o1",
+        "temperature": 1
+      },
+      "wrapper": {
+        "module": "adapters",
+        "class": "LangChainAdapter"
+      }
+    },
+    "grok-2": {
       "module": "langchain_xai",
       "class": "ChatXAI",
       "api_key_env": "XAI_API_KEY",
       "api_key_param": "xai_api_key",
       "params": {
         "model": "grok-2",
-        "temperature": 0.2
+        "temperature": 0.7
+      },
+      "wrapper": {
+        "module": "adapters",
+        "class": "LangChainAdapter"
+      }
+    },
+    "grok-3": {
+      "module": "langchain_xai",
+      "class": "ChatXAI",
+      "api_key_env": "XAI_API_KEY",
+      "api_key_param": "xai_api_key",
+      "params": {
+        "model": "grok-3-beta",
+        "temperature": 0.7
       },
       "wrapper": {
         "module": "adapters",
