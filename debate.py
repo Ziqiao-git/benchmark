@@ -8,9 +8,9 @@ model_a = ModelParticipant("o3", role="debater")
 model_b = ModelParticipant("o1", role="debater")
 
 
-topic = "High level physics questions"
-
-debate_orchestration([model_a, model_b], topic, rounds=3, project_name = topic)
+topic = "High level chemistry questions"
+detailed_instructions = "Focus on the organic chemistry"
+debate_orchestration([model_a, model_b], topic, rounds=3, project_name = topic, detailed_instructions = detailed_instructions)
 judges = []
 judges.append(ModelParticipant("o1", role="judge"))
 judges.append(ModelParticipant("gpt4o", role="judge"))
