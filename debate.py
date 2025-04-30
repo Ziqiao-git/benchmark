@@ -5,16 +5,16 @@ from model_interactions import ModelParticipant, Debate
 
 # Creating model participants with custom parameters
 model_a = ModelParticipant("o3", role="debater")
-model_b = ModelParticipant("o1", role="debater")
+model_b = ModelParticipant("o4-mini", role="debater")
 
 
-topic = "High level chemistry questions"
-detailed_instructions = "Focus on the organic chemistry"
-debate_orchestration([model_a, model_b], topic, rounds=3, project_name = topic, detailed_instructions = detailed_instructions)
+topic = "Consoling a friend"
+detailed_instructions = "The Questioner will take on the role of a Visitor, seeking advice. The Rival will act as a Therapist, offering guidance to the Visitor. The Visitor poses questions or concerns, and the Therapist responds with supportive advice. The primary objective is to evaluate how effectively the participant can provide comfort and reassurance to the Visitor."
+debate_orchestration([model_a, model_b], topic, rounds=20, project_name = topic, detailed_instructions = detailed_instructions)
 judges = []
 judges.append(ModelParticipant("o1", role="judge"))
 judges.append(ModelParticipant("gpt4o", role="judge"))
-judges.append(ModelParticipant("claude", role="judge"))
+# judges.append(ModelParticipant("claude", role="judge"))
 judges.append(ModelParticipant("o3", role="judge"))
 judges.append(ModelParticipant("o4-mini", role="judge"))
 
