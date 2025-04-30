@@ -70,53 +70,107 @@ class ModelParticipant(ParticipantInterface):
 
 class Debate:
     """Manages a structured debate between models."""
-    
-    def __init__(self, topic: str, participants: List[ModelParticipant], 
-                 judges: List[ModelParticipant] = None, rounds: int = 3):
+
+    def __init__(
+        self,
+        topic: str,
+        participants: List[ModelParticipant],
+        judges: List[ModelParticipant] = None,
+        rounds: int = 3,
+        detailed_instructions: str = None
+    ):
         """
         Initialize a debate session.
-        
+
         Args:
             topic: The debate topic
             participants: List of model participants
-            judge: Optional judge model participant
+            judges: Optional judge model participant
             rounds: Number of debate rounds
+            detailed_instructions: Optional extra instructions
         """
         self.topic = topic
         self.participants = participants
         self.rounds = rounds
         self.transcript = []
-        
+        self.detailed_instructions = detailed_instructions
+
+    def _get_history_for(self, participant: ModelParticipant, round_num: int) -> List[Dict]:
+        """
+        Retrieve the conversation history for this participant, showing
+        *only the messages that participant has produced* in all rounds
+        up to (and including) 'round_num'.
+
+        This means the participant never sees the other model’s questions
+        (nor the other model’s answers) in 'history'. They only see
+        what they themselves wrote in previous steps.
+        """
+        filtered_history = []
+        for entry in self.transcript:
+            if entry["round"] <= round_num and entry["participant"] == participant.model_id:
+                filtered_history.append(entry)
+        return filtered_history
+
+    def _format_history(self, history_entries: List[Dict]) -> List[Dict]:
+        """
+        Convert the raw list of transcript entries into the format used for
+        the 'history' in the context. Typically, we produce a list of
+        dictionaries with either {"user": "..."} or {"assistant": "..."}
+        that the model can consume in `_format_messages()`.
+        """
+        formatted = []
+        for entry in history_entries:
+            formatted.append({"assistant": entry["response"]})
+        return formatted
+
     def run(self) -> Dict[str, Any]:
         """Run the full debate and return results."""
-        # only two participants so far
         if len(self.participants) != 2:
             raise ValueError("Debate must have exactly two participants")
-        
-        participant_a = self.participants[0]
-        participant_b = self.participants[1]
+
+        participant_a, participant_b = self.participants
+
+        if self.detailed_instructions is None:
+            self.detailed_instructions = "Remember to be creative and think outside the box."
 
         challenge_prompt = {
-            "system_prompt": f"You are a challenger on the topic of {self.topic}. Ask a difficult question that will test your opponent's knowledge.",
-            "input": None,
-            "history": self.transcript,
+            "system_prompt": (
+                f"You are a challenger on the topic of {self.topic}. "
+                f"Ask a difficult question that will test your opponent's knowledge. "
+                f"Here are some detailed instructions: {self.detailed_instructions}"
+            ),
+            "input": None,   # Will fill in each time
+            "history": None, # Will fill in each time
             "round": None
         }
-        
+
         response_prompt = {
-            "system_prompt": f"You are answering a challenging question on the topic of {self.topic}.",
-            "input": None,
-            "history": self.transcript,
+            "system_prompt": (
+                f"You are answering a challenging question on the topic of {self.topic}."
+            ),
+            "input": None,   # Will fill in each time
+            "history": None, # Will fill in each time
             "round": None
         }
 
+        for round_num in range(1, self.rounds + 1):
 
-        for round_num in range(1, self.rounds+1):
-            # First participant asks a question
+            # =========================
+            # 1) Participant A asks a question
+            # =========================
             context_a = challenge_prompt.copy()
-            context_a["input"] = f"Create a challenging question about {self.topic} that will be difficult for your opponent to answer correctly, please use the history context to find the opponents' weaknesses."
+            # HISTORY: only A's own prior messages
+            context_a["history"] = self._format_history(
+                self._get_history_for(participant_a, round_num)
+            )
+            # PROMPT
+            context_a["input"] = (
+                f"Create a challenging question about {self.topic} that "
+                "will be difficult for your opponent to answer correctly. "
+                "Use any past context you have (only your own) to refine it."
+            )
             context_a["round"] = round_num
-            # First participant asks a question
+
             challenge_a = participant_a.generate_response(context_a)
             self.transcript.append({
                 "round": round_num,
@@ -124,11 +178,19 @@ class Debate:
                 "participant": participant_a.model_id,
                 "response": challenge_a
             })
-            
-            # Second participant answers the question
+
+            # =========================
+            # 2) Participant B answers A's question
+            # =========================
             context_b = response_prompt.copy()
+            # HISTORY: only B's own prior messages
+            context_b["history"] = self._format_history(
+                self._get_history_for(participant_b, round_num)
+            )
+            # The question from participant A is *only* in the input
             context_b["input"] = f"Answer the following question about {self.topic}: {challenge_a}"
             context_b["round"] = round_num
+
             response_b = participant_b.generate_response(context_b)
             self.transcript.append({
                 "round": round_num,
@@ -136,10 +198,21 @@ class Debate:
                 "participant": participant_b.model_id,
                 "response": response_b
             })
-            # Second participant asks a question
+
+            # =========================
+            # 3) Participant B asks a question
+            # =========================
             context_b = challenge_prompt.copy()
-            context_b["input"] = f"Create a challenging question about {self.topic} that will be difficult for your opponent to answer correctly, please use the history context to find the opponents' weaknesses."
+            context_b["history"] = self._format_history(
+                self._get_history_for(participant_b, round_num)
+            )
+            context_b["input"] = (
+                f"Create a challenging question about {self.topic} that "
+                "will be difficult for your opponent to answer correctly. "
+                "Use any past context you have (only your own) to refine it."
+            )
             context_b["round"] = round_num
+
             challenge_b = participant_b.generate_response(context_b)
             self.transcript.append({
                 "round": round_num,
@@ -148,10 +221,17 @@ class Debate:
                 "response": challenge_b
             })
 
-            # First participant answers the question
+            # =========================
+            # 4) Participant A answers B's question
+            # =========================
             context_a = response_prompt.copy()
+            context_a["history"] = self._format_history(
+                self._get_history_for(participant_a, round_num)
+            )
+            # The question from participant B is only in the input
             context_a["input"] = f"Answer the following question about {self.topic}: {challenge_b}"
             context_a["round"] = round_num
+
             response_a = participant_a.generate_response(context_a)
             self.transcript.append({
                 "round": round_num,
@@ -159,8 +239,10 @@ class Debate:
                 "participant": participant_a.model_id,
                 "response": response_a
             })
-        
+
+        # At the end, return the full transcript
         return {"transcript": self.transcript}
+
 
 class JudgmentCriteria(BaseModel):
     """Evaluation criteria for a round"""

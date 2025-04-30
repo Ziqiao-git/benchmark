@@ -1,5 +1,6 @@
 from model_handler import get_chat_model
 from model_interactions import ModelParticipant, Evaluation, JudgmentCriteria, FinalAssessment
+import os
 import json
 import datetime
 
@@ -15,9 +16,13 @@ def judge_orchestration(json_file_path, judges, project_name):
     transcript = debate_data["results"]["transcript"]
     
     # 3. Create judge participants
-    judges = [
-        ModelParticipant(judge, role="judge") for judge in judges
-    ]
+    for judge in judges:
+        if isinstance(judge, ModelParticipant):
+            continue
+        else:
+            judge = ModelParticipant(judge, role="judge")
+    
+   
     
     # 4. Initialize the evaluation
     evaluation = Evaluation(
@@ -33,6 +38,7 @@ def judge_orchestration(json_file_path, judges, project_name):
     
     # 6. Save the evaluation results
     filename = f"{project_name}/judgements/evaluation_results_{model_a_id}_{model_b_id}.json"
+    os.makedirs(os.path.dirname(filename), exist_ok=True)
     
     # Create a complete results dictionary
     full_results = {
@@ -67,4 +73,4 @@ def judge_orchestration(json_file_path, judges, project_name):
     print(f"Better History User: {results.get('better_history_user', 'Unknown')}")
 
 if __name__ == "__main__":
-    judge_debate_results("debate_results_20250416_153630.json")
+    judge_orchestration("debate_results_20250416_153630.json", ["gpt4o", "claude"], "debate_results_20250416_153630")

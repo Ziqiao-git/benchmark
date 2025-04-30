@@ -6,13 +6,18 @@ import os
 
 def debate_orchestration(models, topic, rounds, project_name):
     # 1. Create two model participants for the debate
-    model_a = models[0]
-    model_b = models[1]
+    # Check if models are already ModelParticipant instances
+    if isinstance(models[0], ModelParticipant) and isinstance(models[1], ModelParticipant):
+        model_a = models[0]
+        model_b = models[1]
+    else:
+        model_a = ModelParticipant(models[0], role="debater")
+        model_b = ModelParticipant(models[1], role="debater")
     
     # 2. Define the debate topic
     topic = topic
     
-    # 3. Set up the debate with 2 rounds
+    # 3. Set up the debate with specified rounds
     debate = Debate(topic, [model_a, model_b], rounds=rounds)
     
     # 4. Run the debate
@@ -23,8 +28,12 @@ def debate_orchestration(models, topic, rounds, project_name):
     print(f"Number of rounds: {debate.rounds}")
     print(f"Number of entries: {len(results['transcript'])}")
     
+    # Create all necessary directories (with exist_ok=True)
+    debates_dir = os.path.join(project_name, "debates")
+    os.makedirs(debates_dir, exist_ok=True)
+    
     # 6. Save the results to a JSON file
-    filename = f"{project_name}/debates/debate_results_{model_a.model_id}_{model_b.model_id}.json"
+    filename = os.path.join(debates_dir, f"debate_results_{model_a.model_id}_{model_b.model_id}.json")
     
     # Create a more complete results dictionary
     full_results = {
@@ -37,10 +46,6 @@ def debate_orchestration(models, topic, rounds, project_name):
         "timestamp": datetime.datetime.now().isoformat(),
         "results": results
     }
-    
-
-    # Define filename only once
-    filename = f"{project_name}/debates/debate_results_{model_a.model_id}_{model_b.model_id}.json"
     
     # Save to JSON file
     with open(filename, 'w') as f:
