@@ -1,5 +1,10 @@
 # Python
 __pycache__/
 results/
+**/*.json
 .env
+*.json
+*.jsonl
+*.txt
+*.csv
 
