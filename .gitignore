@@ -4,6 +4,7 @@ results/
 **/*.json
 .env
 *.json
+!model_config.json
 *.jsonl
 *.txt
 *.csv

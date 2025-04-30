@@ -4,7 +4,7 @@ import json
 import datetime
 import os
 
-def debate_orchestration(models, topic, rounds, project_name):
+def debate_orchestration(models, topic, rounds, project_name, detailed_instructions = None):
     # 1. Create two model participants for the debate
     # Check if models are already ModelParticipant instances
     if isinstance(models[0], ModelParticipant) and isinstance(models[1], ModelParticipant):
@@ -17,8 +17,9 @@ def debate_orchestration(models, topic, rounds, project_name):
     # 2. Define the debate topic
     topic = topic
     
+    
     # 3. Set up the debate with specified rounds
-    debate = Debate(topic, [model_a, model_b], rounds=rounds)
+    debate = Debate(topic, [model_a, model_b], rounds=rounds, detailed_instructions = detailed_instructions)
     
     # 4. Run the debate
     results = debate.run()
