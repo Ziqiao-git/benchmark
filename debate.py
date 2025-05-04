@@ -8,8 +8,8 @@ model_a = ModelParticipant("o3", role="debater")
 model_b = ModelParticipant("o4-mini", role="debater")
 
 
-topic = "Consoling a friend"
-detailed_instructions = "The Questioner will take on the role of a Visitor, seeking advice. The Rival will act as a Therapist, offering guidance to the Visitor. The Visitor poses questions or concerns, and the Therapist responds with supportive advice. The primary objective is to evaluate how effectively the participant can provide comfort and reassurance to the Visitor."
+topic = "Real Life doctor"
+detailed_instructions = "The questioner will take on the role of a patient, seeking advice. The rival will act as a doctor, offering guidance to the patient. The patient poses questions or concerns, and the doctor responds with supportive advice. The primary objective is to evaluate how effectively the participant can provide comfort and reassurance to the patient."
 debate_orchestration([model_a, model_b], topic, rounds=20, project_name = topic, detailed_instructions = detailed_instructions)
 judges = []
 judges.append(ModelParticipant("o1", role="judge"))

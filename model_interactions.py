@@ -256,14 +256,14 @@ class FinalAssessment(BaseModel):
     overall_performance: str = Field(..., description="Assessment of both models' overall performance")
     history_usage: str = Field(..., description="Assessment of how well each model used conversation history to attack the opponent")
     better_history_user: Literal["A", "B"] = Field(..., description="Which model better used history to attack (A or B)")
-    final_winner: Literal["A", "B", "Tie"] = Field(..., description="Overall battle winner (A, B, or Tie)")
+    final_winner: Literal["A", "B"] = Field(..., description="Overall battle winner (A or B)")
     reasoning: str = Field(..., description="Explanation for the final judgment")
 
 class Evaluation:
     """Manages evaluations and voting between model responses in a debate."""
     
     def __init__(self, judges: List[ModelParticipant], transcript: List[Dict], 
-                 model_a_id: str, model_b_id: str, criteria: Optional[List[str]] = None):
+                 model_a_id: str, model_b_id: str, response_criteria: Optional[List[str]] = None, question_criteria: Optional[List[str]] = None, detailed_instructions: str = None):
         """
         Initialize an evaluation session.
         
@@ -272,13 +272,19 @@ class Evaluation:
             transcript: The debate transcript with questions and answers
             model_a_id: Identifier for model A
             model_b_id: Identifier for model B
-            criteria: Optional list of evaluation criteria
+            response_criteria: Optional list of evaluation criteria
+            detailed_instructions: instructions that judges should 
         """
         self.judges = judges
         self.transcript = transcript
         self.model_a_id = model_a_id
         self.model_b_id = model_b_id
-        self.criteria = criteria or ["question quality", "answer accuracy", "reasoning depth"]
+        self.detailed_instructions = detailed_instructions
+        self.response_criteria = response_criteria or ["answer accuracy: the ability to provide a correct and complete answer to the question", 
+                                                       "Logic: the ability to reason through the question and provide a logical answer", 
+                                                       "Empathy: the ability to sense and understand another person’s feelings, perspectives, and underlying needs, then respond in a way that shows you genuinely “get” where they’re coming from", 
+                                                       "Explanation ability: the ability to explain the answer in a way that is easy to understand"]
+        self.question_criteria = question_criteria or ["question quality", "answer accuracy", "reasoning depth"]
         self.results = {"round_judgments": {}}
         
         # Create the Pydantic parser
@@ -288,12 +294,12 @@ class Evaluation:
         self.prompt_template = PromptTemplate(
             template=(
                 "You are evaluating a knowledge battle between two AI models.\n"
-                "Judge the round based on these criteria: {criteria}.\n\n"
+                "Judge the round based on these criteria: {response_criteria}.\n\n"
                 "Round transcript:\n{transcript}\n\n"
                 "{format_instructions}\n\n"
                 "Remember, your evaluation must be thorough but the output format must strictly follow the specified JSON schema."
             ),
-            input_variables=["criteria", "transcript"],
+            input_variables=["response_criteria", "transcript"],
             partial_variables={"format_instructions": self.parser.get_format_instructions()}
         )
     
@@ -321,7 +327,7 @@ class Evaluation:
         for judge in self.judges:
             # Format the prompt with the criteria and transcript
             prompt = self.prompt_template.format(
-                criteria=", ".join(self.criteria),
+                response_criteria=", ".join(self.response_criteria),
                 transcript=round_text
             )
             
