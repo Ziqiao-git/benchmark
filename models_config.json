@@ -84,6 +84,20 @@
         "class": "LangChainAdapter"
       }
     },
+    "o1-pro": {
+      "module": "langchain_openai",
+      "class": "ChatOpenAI",
+      "api_key_env": "OPENAI_API_KEY",
+      "api_key_param": "openai_api_key",
+      "params": {
+        "model_name": "o1-pro-2025-03-19",
+        "temperature": 1
+      },
+      "wrapper": {
+        "module": "adapters",
+        "class": "LangChainAdapter"
+      }
+    },
     "grok-2": {
       "module": "langchain_xai",
       "class": "ChatXAI",
