@@ -1,16 +1,68 @@
 # adapters.py
 import logging
 import os
+from openai import OpenAI
+from dotenv import load_dotenv
 class LangChainAdapter:
     """Adapter for LangChain models to provide a consistent interface."""
     
     def __init__(self, model):
         self.model = model
-    
+
     def generate_messages(self, messages):
         """Generate response from model using a list of (role, content) tuples."""
-        response = self.model.invoke(messages)
-        return response.content
+        try:
+            resp = self.model.invoke(messages)
+            print(resp.content)
+            return resp.content
+        except Exception:
+            pass
+
+        load_dotenv()  # ensure OPENAI_API_KEY is loaded
+        client = OpenAI()
+
+
+        # resp = client.responses.create(
+        #     model=self.model.model_name,
+        #     input=messages,
+        #     text={
+        #         "format": {
+        #           "type": "text"
+        #         }
+        #       },
+        #       reasoning={
+        #         "effort": "medium"
+        #       },
+        #       tools=[],
+        #       store=True
+        # )
+        # print(messages[0][1])
+        resp = client.responses.create(
+            model=self.model.model_name,
+
+            input=[
+                {"role": "system", "content": messages[0][1]},
+                {"role": "user", "content": messages[1][1]},
+            ],
+            text={
+                    "format": {
+                      "type": "text"
+                    }
+                  },
+                  reasoning={
+                    "effort": "medium"
+                  },
+                  tools=[],
+                  store=True
+        )
+        # print(resp.output[1].content[0])
+        # print(resp.output[1].content[0].text)
+
+        # Wrap it so .content still works
+        # class FakeMsg:
+        #     def __init__(self, text): self.content = text
+
+        return resp.output[1].content[0].text
 
 class LocalModelHandler:
     """Handles local models with vLLM preference and HuggingFace fallback."""
