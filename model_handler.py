@@ -41,6 +41,7 @@ def get_chat_model(model_id, **kwargs):
     api_key = None
     if api_key_env:
         api_key = os.getenv(api_key_env)
+        # print(api_key) # for debugging
     
     # Prepare parameters
     params = model_config.get("params", {}).copy()

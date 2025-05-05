@@ -3,66 +3,86 @@ import logging
 import os
 from openai import OpenAI
 from dotenv import load_dotenv
+
+
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+
 class LangChainAdapter:
-    """Adapter for LangChain models to provide a consistent interface."""
-    
     def __init__(self, model):
         self.model = model
 
-    def generate_messages(self, messages):
-        """Generate response from model using a list of (role, content) tuples."""
-        try:
-            resp = self.model.invoke(messages)
-            print(resp.content)
-            return resp.content
-        except Exception:
-            pass
+    def generate_messages(self, tuples):               # tuples=[("user", "..."), ...]
+        # ── convert tuples → LangChain Message objects
+        role_map = {
+            "system": SystemMessage,
+            "user":   HumanMessage,
+            "assistant": AIMessage,
+        }
+        lc_msgs = [role_map[r](content=c) for r, c in tuples]
 
-        load_dotenv()  # ensure OPENAI_API_KEY is loaded
-        client = OpenAI()
+        # ── call the underlying LC chat model; no try/except needed
+        resp = self.model.invoke(lc_msgs)
+        return resp.content
+# class LangChainAdapter:
+#     """Adapter for LangChain models to provide a consistent interface."""
+    
+#     def __init__(self, model):
+#         self.model = model
+
+#     def generate_messages(self, messages):
+#         """Generate response from model using a list of (role, content) tuples."""
+#         try:
+#             resp = self.model.invoke(messages)
+#             print(resp.content)
+#             return resp.content
+#         except Exception:
+#             pass
+
+#         load_dotenv()  # ensure OPENAI_API_KEY is loaded
+#         client = OpenAI()
 
 
-        # resp = client.responses.create(
-        #     model=self.model.model_name,
-        #     input=messages,
-        #     text={
-        #         "format": {
-        #           "type": "text"
-        #         }
-        #       },
-        #       reasoning={
-        #         "effort": "medium"
-        #       },
-        #       tools=[],
-        #       store=True
-        # )
-        # print(messages[0][1])
-        resp = client.responses.create(
-            model=self.model.model_name,
+#         # resp = client.responses.create(
+#         #     model=self.model.model_name,
+#         #     input=messages,
+#         #     text={
+#         #         "format": {
+#         #           "type": "text"
+#         #         }
+#         #       },
+#         #       reasoning={
+#         #         "effort": "medium"
+#         #       },
+#         #       tools=[],
+#         #       store=True
+#         # )
+#         # print(messages[0][1])
+#         resp = client.responses.create(
+#             model=self.model.model_name,
 
-            input=[
-                {"role": "system", "content": messages[0][1]},
-                {"role": "user", "content": messages[1][1]},
-            ],
-            text={
-                    "format": {
-                      "type": "text"
-                    }
-                  },
-                  reasoning={
-                    "effort": "medium"
-                  },
-                  tools=[],
-                  store=True
-        )
-        # print(resp.output[1].content[0])
-        # print(resp.output[1].content[0].text)
+#             input=[
+#                 {"role": "system", "content": messages[0][1]},
+#                 {"role": "user", "content": messages[1][1]},
+#             ],
+#             text={
+#                     "format": {
+#                       "type": "text"
+#                     }
+#                   },
+#                   reasoning={
+#                     "effort": "medium"
+#                   },
+#                   tools=[],
+#                   store=True
+#         )
+#         # print(resp.output[1].content[0])
+#         # print(resp.output[1].content[0].text)
 
-        # Wrap it so .content still works
-        # class FakeMsg:
-        #     def __init__(self, text): self.content = text
+#         # Wrap it so .content still works
+#         # class FakeMsg:
+#         #     def __init__(self, text): self.content = text
 
-        return resp.output[1].content[0].text
+#         return resp.output[1].content[0].text
 
 class LocalModelHandler:
     """Handles local models with vLLM preference and HuggingFace fallback."""

@@ -153,6 +153,126 @@
     "wrapper": {
       "module": "adapters",
       "class": "LangChainAdapter"
+      }
+    },
+    "openrouter-claude-3.7-sonnet-thinking": {
+      "module": "langchain_openai",
+      "class": "ChatOpenAI",
+      "api_key_env": "OPENROUTER_API_KEY", 
+      "api_key_param": "api_key",
+      "params": {
+        "model": "anthropic/claude-3.7-sonnet:thinking",
+        "temperature": 0.7,
+        "base_url": "https://openrouter.ai/api/v1"
+      },
+      "wrapper": {
+        "module": "adapters",
+        "class": "LangChainAdapter"
+      }
+    },
+    "openrouter-Grok-3-Beta": {
+      "module": "langchain_openai",
+      "class": "ChatOpenAI",
+      "api_key_env": "OPENROUTER_API_KEY", 
+      "api_key_param": "api_key",
+      "params": {
+        "model": "x-ai/grok-3-beta",
+        "temperature": 0.7,
+        "base_url": "https://openrouter.ai/api/v1"
+      },
+      "wrapper": {
+        "module": "adapters",
+        "class": "LangChainAdapter"
+      }
+    },
+    "openrouter-Gemini-2.5-pro": {
+      "module": "langchain_openai",
+      "class": "ChatOpenAI",
+      "api_key_env": "OPENROUTER_API_KEY", 
+      "api_key_param": "api_key",
+      "params": {
+        "model": "google/gemini-2.5-pro-preview-03-25",
+        "temperature": 0.7,
+        "base_url": "https://openrouter.ai/api/v1"
+      },
+      "wrapper": {
+        "module": "adapters",
+        "class": "LangChainAdapter"
+      }
+    },
+    "openrouter-Gemini-2.5-flash-thinking": {
+      "module": "langchain_openai",
+      "class": "ChatOpenAI",
+      "api_key_env": "OPENROUTER_API_KEY", 
+      "api_key_param": "api_key",
+      "params": {
+        "model": "google/gemini-2.5-flash-preview:thinking",
+        "temperature": 0.7,
+        "base_url": "https://openrouter.ai/api/v1"
+      },
+      "wrapper": {
+        "module": "adapters",
+        "class": "LangChainAdapter"
+      }
+    },
+    "openrouter-Qwen3-235B-A22B": {
+      "module": "langchain_openai",
+      "class": "ChatOpenAI",
+      "api_key_env": "OPENROUTER_API_KEY", 
+      "api_key_param": "api_key",
+      "params": {
+        "model": "qwen/qwen3-235b-A22b",
+        "temperature": 0.7,
+        "base_url": "https://openrouter.ai/api/v1"
+      },
+      "wrapper": {
+        "module": "adapters",
+        "class": "LangChainAdapter"
+      }
+    },
+    "openrouter-QwQ-32B": {
+      "module": "langchain_openai",
+      "class": "ChatOpenAI",
+      "api_key_env": "OPENROUTER_API_KEY", 
+      "api_key_param": "api_key",
+      "params": {
+        "model": "qwen/qwen3-32b",
+        "temperature": 0.7,
+        "base_url": "https://openrouter.ai/api/v1"
+      },
+      "wrapper": {
+        "module": "adapters",
+        "class": "LangChainAdapter"
+      }
+    },
+    "openrouter-deepseek-v3-0324": {
+      "module": "langchain_openai",
+      "class": "ChatOpenAI",
+      "api_key_env": "OPENROUTER_API_KEY", 
+      "api_key_param": "api_key",
+      "params": {
+        "model": "deepseek/deepseek-chat-v3-0324",
+        "temperature": 0.7,
+        "base_url": "https://openrouter.ai/api/v1"
+      },
+      "wrapper": {
+        "module": "adapters",
+        "class": "LangChainAdapter"
+      }
+    },
+    "openrouter-Amazon_Nova_1": {
+      "module": "langchain_openai",
+      "class": "ChatOpenAI",
+      "api_key_env": "OPENROUTER_API_KEY", 
+      "api_key_param": "api_key",
+      "params": {
+        "model": "amazon/nova-pro-v1",
+        "temperature": 0.7,
+        "base_url": "https://openrouter.ai/api/v1"
+      },
+      "wrapper": {
+        "module": "adapters",
+        "class": "LangChainAdapter"
+      }
     }
-  }
   }

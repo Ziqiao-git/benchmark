@@ -4,8 +4,8 @@ from model_interactions import ModelParticipant, Debate
 
 
 # Creating model participants with custom parameters
-model_a = ModelParticipant("deepseek", role="debater")
-model_b = ModelParticipant("o1-pro", role="debater")
+model_a = ModelParticipant("openrouter-claude-3.7-sonnet-thinking", role="debater")
+model_b = ModelParticipant("openrouter-claude-3.7-sonnet-thinking", role="debater")
 
 
 topic = "Real Life emergency room doctor"
