@@ -35,9 +35,7 @@ class ModelParticipant(ParticipantInterface):
     def generate_response(self, context: dict) -> str:
         """Generate a response from the model based on context."""
         # Format messages based on context
-        messages = self._format_messages(context)
-        print(messages)
-        
+        messages = self._format_messages(context)        
         # Get response from model
         response = self.model.generate_messages(messages)
         

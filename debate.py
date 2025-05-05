@@ -5,7 +5,7 @@ from model_interactions import ModelParticipant, Debate
 
 # Creating model participants with custom parameters
 model_a = ModelParticipant("deepseek", role="debater")
-model_b = ModelParticipant("claude", role="debater")
+model_b = ModelParticipant("o1-pro", role="debater")
 
 
 topic = "Real Life emergency room doctor"
