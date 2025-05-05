@@ -36,6 +36,7 @@ class ModelParticipant(ParticipantInterface):
         """Generate a response from the model based on context."""
         # Format messages based on context
         messages = self._format_messages(context)
+        print(messages)
         
         # Get response from model
         response = self.model.generate_messages(messages)
@@ -111,16 +112,26 @@ class Debate:
                 filtered_history.append(entry)
         return filtered_history
 
-    def _format_history(self, history_entries: List[Dict]) -> List[Dict]:
+    def _format_history(self, participant: ModelParticipant, history_entries: List[Dict]) -> List[Dict]:
         """
         Convert the raw list of transcript entries into the format used for
         the 'history' in the context. Typically, we produce a list of
-        dictionaries with either {"user": "..."} or {"assistant": "..."}
+        dictionaries with either {"user": "..."} or {"assistant": "..."} according to the model's role.
         that the model can consume in `_format_messages()`.
         """
         formatted = []
         for entry in history_entries:
-            formatted.append({"assistant": entry["response"]})
+            same_participant = entry["participant"] == participant.model_id
+            if same_participant and entry["role"] == "challenger":
+                # The participant's own lines => assistant but we need to add a user message to the history (deepseek need to see the user message first)
+                formatted.append({"user": "Please strictly follow the giving tone and setting, propose your question now"})
+                formatted.append({"assistant": entry["response"]})
+            elif same_participant and entry["role"] == "responder":
+                # The other model's lines => user
+                formatted.append({"assistant": entry["response"]})
+            else:
+                # The other model's lines => user
+                formatted.append({"user": entry["response"]})
         return formatted
 
     def run(self) -> Dict[str, Any]:
@@ -161,6 +172,7 @@ class Debate:
             context_a = challenge_prompt.copy()
             # HISTORY: only A's own prior messages
             context_a["history"] = self._format_history(
+                participant_a,
                 self._get_history_for(participant_a, round_num)
             )
             # PROMPT
@@ -185,6 +197,7 @@ class Debate:
             context_b = response_prompt.copy()
             # HISTORY: only B's own prior messages
             context_b["history"] = self._format_history(
+                participant_b,
                 self._get_history_for(participant_b, round_num)
             )
             # The question from participant A is *only* in the input
@@ -204,6 +217,7 @@ class Debate:
             # =========================
             context_b = challenge_prompt.copy()
             context_b["history"] = self._format_history(
+                participant_b,
                 self._get_history_for(participant_b, round_num)
             )
             context_b["input"] = (
@@ -226,6 +240,7 @@ class Debate:
             # =========================
             context_a = response_prompt.copy()
             context_a["history"] = self._format_history(
+                participant_a,
                 self._get_history_for(participant_a, round_num)
             )
             # The question from participant B is only in the input

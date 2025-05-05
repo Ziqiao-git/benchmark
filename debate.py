@@ -23,33 +23,3 @@ judge_orchestration(f"{topic}/debates/debate_results_{model_a.model_id}_{model_b
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-# from openai import OpenAI
-# client = OpenAI()
-
-# response = client.responses.create(
-#   model="o1-pro-2025-03-19",
-#   input="hello,introduce your self, what ai model are you in openai?",
-#   text={
-#     "format": {
-#       "type": "text"
-#     }
-#   },
-#   reasoning={
-#     "effort": "medium"
-#   },
-#   tools=[],
-#   store=True
-# )
-# print(response)
