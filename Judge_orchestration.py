@@ -4,7 +4,7 @@ import os
 import json
 import datetime
 
-def judge_orchestration(json_file_path, judges, project_name):
+def judge_orchestration(json_file_path, judges, project_name, detailed_instructions = None, response_criteria = None, question_criteria = None):
     # 1. Load the debate results from the JSON file
     with open(json_file_path, 'r') as f:
         debate_data = json.load(f)
@@ -30,7 +30,10 @@ def judge_orchestration(json_file_path, judges, project_name):
         transcript=transcript,
         model_a_id=model_a_id,
         model_b_id=model_b_id,
-        criteria=["question quality", "answer accuracy", "reasoning depth", "history usage"]
+        topic=topic,
+        response_criteria=response_criteria,
+        question_criteria=question_criteria,
+        detailed_instructions=detailed_instructions
     )
     
     # 5. Run the evaluation
@@ -70,7 +73,8 @@ def judge_orchestration(json_file_path, judges, project_name):
     print(f"Round Wins - Model A: {results.get('battle_summary', {}).get('model_a_wins', 0)}")
     print(f"Round Wins - Model B: {results.get('battle_summary', {}).get('model_b_wins', 0)}")
     print(f"Ties: {results.get('battle_summary', {}).get('ties', 0)}")
+    print(f"Better Question Asker:{results.get('better_question_asker', 'Unknown')}")
     print(f"Better History User: {results.get('better_history_user', 'Unknown')}")
-
+    
 if __name__ == "__main__":
     judge_orchestration("debate_results_20250416_153630.json", ["gpt4o", "claude"], "debate_results_20250416_153630")

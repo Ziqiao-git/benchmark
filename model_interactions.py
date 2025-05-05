@@ -246,24 +246,25 @@ class Debate:
 
 class JudgmentCriteria(BaseModel):
     """Evaluation criteria for a round"""
-    question_quality: str = Field(..., description="Assessment of the quality of both models' questions")
-    answer_quality: str = Field(..., description="Assessment of the quality of both models' answers")
-    reasoning: str = Field(..., description="Explanation for why one model performed better than the other")
-    winner: Literal["A", "B"] = Field(..., description="Round winner (A or B)")
+    # question_quality: str = Field(..., description="Assessment of the quality of both models' questions")
+    # answer_quality: str = Field(..., description="Assessment of the quality of both models' answers")
+    # reasoning: str = Field(..., description="Explanation for why one model performed better than the other")
+    winner: Literal["A", "B"] = Field(..., description="Which model performed better in answering the rival proposed question under the response criteria (A or B)")
+    better_question: Literal["A", "B"] = Field(..., description="Which model asked the better question under the question criteria (A or B)")
 
 class FinalAssessment(BaseModel):
     """Final assessment of the entire battle"""
-    overall_performance: str = Field(..., description="Assessment of both models' overall performance")
-    history_usage: str = Field(..., description="Assessment of how well each model used conversation history to attack the opponent")
+    # overall_performance: str = Field(..., description="Assessment of both models' overall performance")
+    # history_usage: str = Field(..., description="Assessment of how well each model used conversation history to attack the opponent")
     better_history_user: Literal["A", "B"] = Field(..., description="Which model better used history to attack (A or B)")
     final_winner: Literal["A", "B"] = Field(..., description="Overall battle winner (A or B)")
-    reasoning: str = Field(..., description="Explanation for the final judgment")
+    # reasoning: str = Field(..., description="Explanation for the final judgment")
 
 class Evaluation:
     """Manages evaluations and voting between model responses in a debate."""
     
     def __init__(self, judges: List[ModelParticipant], transcript: List[Dict], 
-                 model_a_id: str, model_b_id: str, response_criteria: Optional[List[str]] = None, question_criteria: Optional[List[str]] = None, detailed_instructions: str = None):
+                 model_a_id: str, model_b_id: str, topic: str = None, response_criteria: Optional[List[str]] = None, question_criteria: Optional[List[str]] = None, detailed_instructions: str = None):
         """
         Initialize an evaluation session.
         
@@ -276,6 +277,7 @@ class Evaluation:
             detailed_instructions: instructions that judges should 
         """
         self.judges = judges
+        self.topic = topic
         self.transcript = transcript
         self.model_a_id = model_a_id
         self.model_b_id = model_b_id
@@ -284,7 +286,13 @@ class Evaluation:
                                                        "Logic: the ability to reason through the question and provide a logical answer", 
                                                        "Empathy: the ability to sense and understand another person’s feelings, perspectives, and underlying needs, then respond in a way that shows you genuinely “get” where they’re coming from", 
                                                        "Explanation ability: the ability to explain the answer in a way that is easy to understand"]
-        self.question_criteria = question_criteria or ["question quality", "answer accuracy", "reasoning depth"]
+        self.question_criteria = question_criteria or [
+                                                        "Does the question describe a realistic, real-world scenario with enough detail to be actionable (i.e., not overly abstract)?",
+                                                        "Is the question squarely focused on the target topic/domain rather than being tangential or unrelated?",
+                                                        "Is the question too trivial—could it be answered without meaningful expertise?",
+                                                        "Is the question intentionally crafted to probe (or exploit) a known weakness or gap in the component’s knowledge?"
+                                                        ]
+
         self.results = {"round_judgments": {}}
         
         # Create the Pydantic parser
@@ -293,7 +301,7 @@ class Evaluation:
         # Create the prompt template for structured output
         self.prompt_template = PromptTemplate(
             template=(
-                "You are evaluating a knowledge battle between two AI models.\n"
+                "You are evaluating a knowledge battle between two AI models. on the topic of {topic} which is {detailed_instructions}\n"
                 "Judge the round based on these criteria: {response_criteria}.\n\n"
                 "Round transcript:\n{transcript}\n\n"
                 "{format_instructions}\n\n"
@@ -319,7 +327,8 @@ class Evaluation:
             raise ValueError(f"No entries found for round {round_num}")
         
         round_judgments = {}
-        round_votes = {self.model_a_id: 0, self.model_b_id: 0}
+        round_votes = {self.model_a_id: 0, self.model_b_id: 0} # votes for the round winner
+        round_q_votes = {self.model_a_id: 0, self.model_b_id: 0} # votes for the better question
         
         # Format the round transcript for evaluation
         round_text = self._format_round(round_entries)
@@ -327,13 +336,15 @@ class Evaluation:
         for judge in self.judges:
             # Format the prompt with the criteria and transcript
             prompt = self.prompt_template.format(
+                topic=self.topic,
+                detailed_instructions=self.detailed_instructions,
                 response_criteria=", ".join(self.response_criteria),
                 transcript=round_text
             )
             
             # Create the context for the judge
             context = {
-                "system_prompt": "You are a fair and impartial judge evaluating AI responses. You must provide your evaluation in the exact structured format requested.",
+                "system_prompt": "You are a fair and impartial judge evaluating AI responses. You must provide your evaluation in the exact structured format requested." ,
                 "input": prompt
             }
             
@@ -347,11 +358,19 @@ class Evaluation:
                 # Store the structured judgment
                 round_judgments[judge.model_id] = judgment.dict()
                 
-                # Count the vote
+                
+                # Count the vote for the response
                 if judgment.winner == "A":
                     round_votes[self.model_a_id] += 1
                 elif judgment.winner == "B":
                     round_votes[self.model_b_id] += 1
+                
+                # Count the vote for the question
+                if judgment.better_question == "A":
+                    round_q_votes[self.model_a_id] += 1
+                elif judgment.better_question == "B":
+                    round_q_votes[self.model_b_id] += 1
+
             except Exception as e:
                 # If parsing fails, store the raw judgment and don't count the vote
                 round_judgments[judge.model_id] = {
@@ -359,7 +378,7 @@ class Evaluation:
                     "parse_error": str(e)
                 }
         
-        # Determine round winner
+        # Determine round winner for the response
         if round_votes[self.model_a_id] > round_votes[self.model_b_id]:
             round_winner = self.model_a_id
         elif round_votes[self.model_b_id] > round_votes[self.model_a_id]:
@@ -367,11 +386,21 @@ class Evaluation:
         else:
             round_winner = "tie"
         
+        # Determine round winner for the question
+        if round_q_votes[self.model_a_id] > round_q_votes[self.model_b_id]:
+            better_question_asker = self.model_a_id
+        elif round_q_votes[self.model_b_id] > round_q_votes[self.model_a_id]:
+            better_question_asker = self.model_b_id
+        else:
+            better_question_asker = "tie"
+        
         # Store results for this round
         round_results = {
             "judgments": round_judgments,
             "votes": round_votes,
-            "winner": round_winner
+            "winner": round_winner,
+            "question_votes": round_q_votes,
+            "better_question_asker": better_question_asker
         }
         
         # Update overall results
@@ -400,6 +429,11 @@ class Evaluation:
             "model_b_wins": 0,
             "ties": 0
         }
+        question_summary = {
+            "model_a_wins": 0,
+            "model_b_wins": 0,
+            "ties": 0
+        }
         
         # Count round wins
         for round_num, round_result in self.results["round_judgments"].items():
@@ -409,6 +443,13 @@ class Evaluation:
                 battle_summary["model_b_wins"] += 1
             else:
                 battle_summary["ties"] += 1
+            
+            if round_result["better_question_asker"] == self.model_a_id:
+                question_summary["model_a_wins"] += 1
+            elif round_result["better_question_asker"] == self.model_b_id:
+                question_summary["model_b_wins"] += 1
+            else:
+                question_summary["ties"] += 1
         
         
         final_parser = PydanticOutputParser(pydantic_object=FinalAssessment)
@@ -416,7 +457,7 @@ class Evaluation:
         # Create prompt template for final assessment
         final_prompt_template = PromptTemplate(
             template=(
-                "You are evaluating the entire knowledge battle between two AI models.\n"
+                "You are evaluating the entire knowledge battle between two AI models in the topic of {topic} which is {detailed_instructions}.\n"
                 "Here is a summary of the round results:\n{round_summary}\n\n"
                 "Complete battle transcript:\n{full_transcript}\n\n"
                 "Provide a final assessment of which model performed better overall and which model "
@@ -425,7 +466,7 @@ class Evaluation:
                 "Your assessment should be thorough and fair, paying special attention to how models used "
                 "information from previous rounds to formulate better questions or attacks."
             ),
-            input_variables=["round_summary", "full_transcript"],
+            input_variables=["round_summary", "full_transcript", "topic", "detailed_instructions"],
             partial_variables={"format_instructions": final_parser.get_format_instructions()}
         )
         
@@ -448,7 +489,9 @@ class Evaluation:
             # Format the prompt with the round summary and transcript
             prompt = final_prompt_template.format(
                 round_summary="\n".join(round_summary_text),
-                full_transcript="\n\n".join(full_transcript_text)
+                full_transcript="\n\n".join(full_transcript_text),
+                topic=self.topic,
+                detailed_instructions=self.detailed_instructions
             )
             
             # Create the context for the judge
@@ -499,6 +542,14 @@ class Evaluation:
         else:
             overall_winner = "tie"
         
+        # Determine better question asker
+        if question_summary["model_a_wins"] > question_summary["model_b_wins"] and question_summary["model_a_wins"] > question_summary["ties"]:
+            better_question_asker = self.model_a_id
+        elif question_summary["model_b_wins"] > question_summary["model_a_wins"] and question_summary["model_b_wins"] > question_summary["ties"]:
+            better_question_asker = self.model_b_id
+        else:
+            better_question_asker = "tie"
+        
         # Determine better history user
         better_history_user = self.model_a_id if history_usage_votes[self.model_a_id] > history_usage_votes[self.model_b_id] else self.model_b_id
         
@@ -506,11 +557,13 @@ class Evaluation:
         final_results = {
             "round_results": self.results["round_judgments"],
             "battle_summary": battle_summary,
+            "question_summary": question_summary,
             "final_assessments": final_assessments,
             "final_votes": final_votes,
             "history_usage_votes": history_usage_votes,
             "overall_winner": overall_winner,
-            "better_history_user": better_history_user
+            "better_history_user": better_history_user,
+            "better_question_asker": better_question_asker
         }
         
         self.results.update(final_results)
