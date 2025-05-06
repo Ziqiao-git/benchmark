@@ -8,22 +8,99 @@ import time
 from Debate_orchestration import debate_orchestration
 from Judge_orchestration import judge_orchestration
 from model_interactions import ModelParticipant
+from elo import update_elo
 
-############################################################
-# Example ELO helper. You could also do a Bradley-Terry fit.
-############################################################
-def update_elo(rating_a, rating_b, result_a, k=32):
+def stable_round_robin_elo(
+    base_models: List[str],
+    judges: List[str],
+    project_name: str,
+    instruction_set: List[str],
+    mass_voter_threshold: float=0.8,
+    initial_rounds: int=3,
+    max_rounds: int=15,
+    k_factor: int=32
+
+) -> Dict[str, float]:
     """
-    rating_a, rating_b: current Elo of model A and model B
-    result_a: 1 if A wins, 0 if B wins, 0.5 if tie
-    k: step size
-    Returns updated rating_a, rating_b
+    1) Initialize Elo = 1500
+    2) For each pair in round-robin, 
+       keep re-trying with +2 rounds if uncertain,
+       up to 'max_rounds' 
+       then do Elo update if we get 'A','B'
+       if still uncertain => treat as tie
+    3) Return final Elo dict 
+       (You can sort by Elo if you like)
     """
-    expected_a = 1.0 / (1 + 10 ** ((rating_b - rating_a) / 400))
-    expected_b = 1.0 - expected_a
-    new_rating_a = rating_a + k * (result_a - expected_a)
-    new_rating_b = rating_b + k * ((1 - result_a) - expected_b)
-    return new_rating_a, new_rating_b
+    # Initialize Elo
+    elo = {m:1500.0 for m in base_models}
+    if os.path.exists(f"{project_name}/ranking_state.json"):
+        with open(f"{project_name}/ranking_state.json", "r") as f:
+            state = json.load(f)
+        round_robin_state = state["BASE_ranking"]
+        print("Resuming from previous state:", round_robin_state)
+    else:
+        round_robin_state = {
+            "elo":{}, #model_id:elo
+            "outcomes":{} #pair_key:outcome
+        }
+        print("Starting from scratch of base models ranking")
+    # For each pair i<j
+    for i in range(len(base_models)):
+        for j in tqdm(range(i+1, len(base_models)), desc=f"RoundRobin Iteration {i+1}"):
+            A = base_models[i]
+            B = base_models[j]
+
+            sorted_pair = tuple(sorted([A,B]))
+            pair_key    = f"{sorted_pair[0]}__vs__{sorted_pair[1]}"
+
+            #If we have already done this pair, skip
+            if pair_key in round_robin_state["outcomes"]:
+                continue
+            # Start with initial
+            current_rounds = initial_rounds
+
+            # Attempt multiple times until we get a certain outcome or exceed max_rounds
+            outcome = "uncertain"
+            while outcome == "uncertain" and current_rounds <= max_rounds:
+                outcome = run_match_with_threshold(
+                    project_name,
+                    A,
+                    B,
+                    instruction_set,
+                    rounds=current_rounds,
+                    judges_list=judges,  # or some other judge selection
+                    mass_voter_threshold=mass_voter_threshold
+                )
+                if outcome == "uncertain":
+                    current_rounds += 2
+
+            # If still uncertain => treat as tie
+            if outcome == "uncertain":
+                result_a = 0.5
+                final_outcome = "tie"
+            elif outcome == "A":
+                result_a = 1.0
+                final_outcome = "A"
+            elif outcome == "B":
+                result_a = 0.0
+                final_outcome = "B"
+            else:
+                # "tie"
+                result_a = 0.5
+                final_outcome = "tie"
+
+            #Elo update
+            old_elo_a = round_robin_state["elo"][A]
+            old_elo_b = round_robin_state["elo"][B]
+            new_elo_a, new_elo_b = update_elo(old_elo_a, old_elo_b, result_a, k=k_factor)
+            # add to state
+            round_robin_state["elo"][A], round_robin_state["elo"][B] = new_elo_a, new_elo_b
+            round_robin_state["outcomes"][pair_key] = final_outcome
+
+            with open(f"{project_name}/ranking_state.json", "w") as f:
+                json.dump(round_robin_state, f, indent=2)
+    return round_robin_state["elo"]
+
 
 ############################################################
 # Checking mass-voter threshold from the evaluation results
@@ -42,7 +119,83 @@ def parse_evaluation_and_determine_winner(
     
     # 1) Check file existence / parse
     if not os.path.exists(eval_path):
+       return "uncertain"
+    try:
+        with open(eval_path, "r") as f:
+            data = json.load(f)
+        results = data["evaluation"]["results"]
+    except:
         return "uncertain"
+
+    # 2) Parse the final mass votes
+    final_votes = results.get("final_votes")
+    if not final_votes:
+        return "uncertain"
+    
+    total = sum(final_votes.values())  # e.g. {A: x, B: y, tie: z}
+    if total == 0:
+        return "uncertain"
+
+    a_votes = final_votes.get("modelA", 0)
+    b_votes = final_votes.get("modelB", 0)
+    tie_votes = final_votes.get("tie", 0)
+
+    # If either A or B or tie is ≥ mass_voter_threshold, we call that the "final aggregator outcome"
+    final_outcome = "uncertain"
+    if a_votes / total >= mass_voter_threshold:
+        final_outcome = "A"
+    elif b_votes / total >= mass_voter_threshold:
+        final_outcome = "B"
+    elif tie_votes / total >= mass_voter_threshold:
+        final_outcome = "tie"
+    # else remain "uncertain"
+
+    # If final_outcome is still "uncertain," no stable mass vote.
+    if final_outcome == "uncertain":
+        return "uncertain"
+
+    # 3) Check the round-sum aggregator from "battle_summary"
+    battle_summary = results.get("battle_summary")
+    if not battle_summary:
+        return "uncertain"
+
+    # e.g. "model_a_wins": X, "model_b_wins": Y, "ties": T
+    model_a_wins = battle_summary.get("model_a_wins", 0)
+    model_b_wins = battle_summary.get("model_b_wins", 0)
+    # we don't strictly need the "ties" count if we just see if A>B or B>A or ==
+
+    if model_a_wins > model_b_wins:
+        round_outcome = "A"
+    elif model_b_wins > model_a_wins:
+        round_outcome = "B"
+    else:
+        round_outcome = "tie"
+
+    # 4) Compare final_outcome vs. round_outcome
+    if final_outcome == round_outcome:
+        # If they match => we trust this is stable
+        return final_outcome
+    else:
+        # If final aggregator & round-sum aggregator disagree => "uncertain"
+        return "uncertain"
+############################################################
+# Checking mass-voter threshold from the evaluation results
+############################################################
+def parse_evaluation_and_determine_winner(
+    eval_path: str, 
+    mass_voter_threshold: float = 0.8
+) -> str:
+    """
+    Reads 'evaluation_results_...' JSON. 
+    1) Checks if there's a stable final aggregator outcome (≥80%).
+    2) Also checks the round-sum aggregator from 'battle_summary'.
+    3) If they match, return that winner. Otherwise, return 'uncertain'.
+    """
+    import os, json
+    
+    # 1) Check file existence / parse
+    if not os.path.exists(eval_path):
+       return "uncertain"
     try:
         with open(eval_path, "r") as f:
             data = json.load(f)
@@ -129,7 +282,7 @@ def run_match_with_threshold(
     debate_results_path = f"{debates_folder}/debate_results_{model_a_id}_{model_b_id}.json"
     evaluation_path = f"{judgements_folder}/evaluation_results_{model_a_id}_{model_b_id}.json"
 
-    # 1) Check if we have a stable evaluation
+    # 1) Check if we have a stable evaluation (For resume check)
     outcome = parse_evaluation_and_determine_winner(evaluation_path, mass_voter_threshold)
     if outcome != "uncertain":
         return outcome  # stable result -> no re-run
@@ -274,7 +427,7 @@ def insert_model_with_binary_search(
 ############################################################
 def main():
     start_time = time.time()
-    # Suppose we have a list of all models
+    # Given a list of all models
     all_models = [
         "openrouter-claude-3.7-sonnet-thinking", 
         "openrouter-deepseek-v3-0324", 
@@ -289,57 +442,74 @@ def main():
         "deepseek",
         "openrouter-Amazon_Nova_1"
     ]
-    random.shuffle(all_models)
-    # pick 5 base
-    base_5 = all_models[:5]
-    new_ones = all_models[5:]
-    print("Base 5:", base_5)
-    print("Remaining:", new_ones)
-    project_name = "MTbench_insert_ranking"
-    os.makedirs(project_name, exist_ok=True)
-    # Define the instruction set
+
     topic = "Question that is similar/related to the one in the given instruction "
     detailed_instructions = [
         "Compose an engaging travel blog post about a recent trip to Hawaii, highlighting cultural experiences and must-see attractions.",
         "Rewrite your previous response. Start every sentence with the letter A."
     ]
     instruction_set = [topic, detailed_instructions]
-    # Step1: rank the base 5 => do repeated round-robin until stable
-    # for simplicity, we do 1 pass, but you can do multiple passes
-    stable = False
-    max_iterations = 5
-    iteration = 0
-    round_num = 3
-    judges = base_5
-    while not stable and iteration < max_iterations:
-        stable = True
-        # do round-robin
-        for i in tqdm(range(len(base_5)), desc=f"Base RoundRobin Iteration {iteration+1}"):
-            for j in range(i+1, len(base_5)):
-                outcome = run_match_with_threshold(
-                    project_name,
-                    base_5[i],
-                    base_5[j],
-                    instruction_set,
-                    rounds=round_num,
-                    judges_list=judges,
-                    mass_voter_threshold=0.8
-                )
-                if outcome == "uncertain":
-                    stable = False
-        iteration += 1
-        round_num += 2
-        # possibly reorder them with any rating system
-        # for a quick hack, we won't reorder. In a real approach, you'd parse outcomes => update rating => sort
-        # if rating stable => stable = True
+    
+    # pick Given numer base models
+    base_num = 5
+    project_name = "MTbench_insert_ranking"
+    os.makedirs(project_name, exist_ok=True)
+    state_file = os.path.join(project_name, "ranking_state.json")
+    if os.path.exists(state_file):
+        with open(state_file, "r") as f:
+            state = json.load(f)
+        print("Resuming from previous state:", state)
+    else:
+        print("No state file found. Starting from scratch.")
+        state = {}
+    if "shuffle_models" not in state:
+        random.shuffle(all_models)
+        state["shuffle_models"] = all_models
+        state["base_stable_done"] = False
+        state["insert_index"] = 0
+        with open(state_file, "w") as f:
+            json.dump(state, f,indent=2)
+    else: 
+        all_models = state["shuffle_models"]
+    # If base not chosen, choose base_num models
+    if "base_models" not in state: 
+        state["base_models"] = all_models[:base_num] 
+        state["new_models"] = all_models[base_num:]
+        state["ranking_base"] = [] # base models has not been ranked yet
+        state["ranking_final"] = [] # final ranking has not been ranked yet
+        state["insert_index"] = 0 # insert index for new models, now it is 0 since we are not inserting yet
+        with open(state_file, "w") as f:
+            json.dump(state, f,indent=2)
+    base_models = state["base_models"]
+    new_models = state["new_models"]
+    # If the ranking is not done, we just initialize it as base_models (which is the rank that has not been ranked yet)
+    if "ranking_base" not in state:
+        state["ranking_base"] = base_models[:]
+    if "final_ranking" not in state:
+        state["final_ranking"] = base_models[:]
+    ranking_base = state["ranking_base"]
+    final_ranking = state["final_ranking"]
+    insert_index = state["insert_index"]
+    base_stable_done = state.get("base_stable_done", False)
+        
 
-    # Suppose we store the base_5 in a final "ranking_base"
-    ranking_base = base_5[:]  # keep it as is or after your rating-based sorting
+    # Step1: Stable the base models
+    judges = random.sample(all_models, 5)
+    if not base_stable_done:
+        base_model_elo = stable_round_robin_elo(base_models, judges, project_name, instruction_set, initial_rounds=3, max_rounds=9, mass_voter_threshold=0.8)
+        sorted_base_model_elo = sorted(base_model_elo.items(), key=lambda x: x[1], reverse=True)
+        ranking_base = [model for model, _ in sorted_base_model_elo]
+        state["ranking_base"] = ranking_base
+        state["base_stable_done"] = True
+        with open(state_file, "w") as f:
+            json.dump(state, f,indent=2)
+        for model in ranking_base:
+            print(model, base_model_elo[model])
 
     # Step2: For each new model in new_ones, do insertion
     final_ranking = ranking_base[:]
 
-    for model in tqdm(new_ones, desc="Inserting new models"):
+    for model in tqdm(new_models, desc="Inserting new models"):
         judges = random.sample(final_ranking, 5)
         final_ranking = insert_model_with_binary_search(
             model_id=model,

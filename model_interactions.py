@@ -140,6 +140,7 @@ class Debate:
                 user_seen = True
 
         return formatted
+    
 
 
     def run(self) -> Dict[str, Any]:

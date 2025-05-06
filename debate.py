@@ -17,7 +17,7 @@ judges.append(ModelParticipant("claude", role="judge"))
 # judges.append(ModelParticipant("claude", role="judge"))
 judges.append(ModelParticipant("o3", role="judge"))
 judges.append(ModelParticipant("o4-mini", role="judge"))
-judges.append(ModelParticipant("deepseek", role="judge"))
+
 
 judge_orchestration(f"{topic}/debates/debate_results_{model_a.model_id}_{model_b.model_id}.json", judges, topic, detailed_instructions = detailed_instructions, response_criteria = None, question_criteria = None)
 
