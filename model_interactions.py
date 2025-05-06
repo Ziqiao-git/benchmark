@@ -111,26 +111,36 @@ class Debate:
         return filtered_history
 
     def _format_history(self, participant: ModelParticipant, history_entries: List[Dict]) -> List[Dict]:
-        """
-        Convert the raw list of transcript entries into the format used for
-        the 'history' in the context. Typically, we produce a list of
-        dictionaries with either {"user": "..."} or {"assistant": "..."} according to the model's role.
-        that the model can consume in `_format_messages()`.
-        """
         formatted = []
+        
+        # Check if we have appended any user lines yet
+        user_seen = False
+
         for entry in history_entries:
             same_participant = entry["participant"] == participant.model_id
+            
             if same_participant and entry["role"] == "challenger":
-                # The participant's own lines => assistant but we need to add a user message to the history (deepseek need to see the user message first)
-                formatted.append({"user": "Please strictly follow the giving tone and setting, propose your question now"})
+                # If no user message has ever been appended, then first ensure
+                # the first line after system is user
+                if not user_seen:
+                    formatted.append({"user": "Please propose a question now."})
+                    user_seen = True
                 formatted.append({"assistant": entry["response"]})
+                
             elif same_participant and entry["role"] == "responder":
-                # The other model's lines => user
+                if not user_seen:
+                    # ensure a user line first
+                    formatted.append({"user": "Please provide your prior context."})
+                    user_seen = True
                 formatted.append({"assistant": entry["response"]})
+                
             else:
-                # The other model's lines => user
+                # lines from the other participant => user
                 formatted.append({"user": entry["response"]})
+                user_seen = True
+
         return formatted
+
 
     def run(self) -> Dict[str, Any]:
         """Run the full debate and return results."""
