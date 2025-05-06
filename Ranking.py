@@ -32,7 +32,6 @@ def stable_round_robin_elo(
        (You can sort by Elo if you like)
     """
     # Initialize Elo
-    elo = {m:1500.0 for m in base_models}
     if os.path.exists(f"{project_name}/ranking_state.json"):
         with open(f"{project_name}/ranking_state.json", "r") as f:
             state = json.load(f)
@@ -42,7 +41,7 @@ def stable_round_robin_elo(
         else:
             print("Starting from scratch of base models ranking")
             round_robin_state = {
-                "elo":{}, #model_id:elo
+                "elo":{m:1500.0 for m in base_models}, #model_id:elo
                 "outcomes":{} #pair_key:outcome
             }
     else:
