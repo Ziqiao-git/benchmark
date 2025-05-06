@@ -3,6 +3,7 @@ import json
 import random
 from typing import List, Dict
 from tqdm import tqdm
+import time
 
 from Debate_orchestration import debate_orchestration
 from Judge_orchestration import judge_orchestration
@@ -32,11 +33,14 @@ def parse_evaluation_and_determine_winner(
     mass_voter_threshold: float = 0.8
 ) -> str:
     """
-    Reads 'evaluation_results_...' JSON, 
-    checks if there's a stable outcome (e.g., 80% votes for A or B).
-    Returns 'A','B','tie','uncertain'
+    Reads 'evaluation_results_...' JSON. 
+    1) Checks if there's a stable final aggregator outcome (≥80%).
+    2) Also checks the round-sum aggregator from 'battle_summary'.
+    3) If they match, return that winner. Otherwise, return 'uncertain'.
     """
-    # Load existing evaluation
+    import os, json
+    
+    # 1) Check file existence / parse
     if not os.path.exists(eval_path):
         return "uncertain"
     try:
@@ -46,38 +50,58 @@ def parse_evaluation_and_determine_winner(
     except:
         return "uncertain"
 
-    # Suppose you store the final votes in something like
-    # results["final_votes"] = {modelA_id: X, modelB_id: Y, "tie": Z}
-    # This is just an example. You’ll adapt it to however your code does.
+    # 2) Parse the final mass votes
     final_votes = results.get("final_votes")
     if not final_votes:
         return "uncertain"
     
-    # Example: final_votes = { "modelA": 8, "modelB": 2, "tie": 0 }
-    # We see total = 10
-    total = sum(final_votes.values())
+    total = sum(final_votes.values())  # e.g. {A: x, B: y, tie: z}
     if total == 0:
         return "uncertain"
 
-    # Check if any model has >= mass_voter_threshold
     a_votes = final_votes.get("modelA", 0)
     b_votes = final_votes.get("modelB", 0)
     tie_votes = final_votes.get("tie", 0)
 
-    # For example, if A has >=80% => winner = A
+    # If either A or B or tie is ≥ mass_voter_threshold, we call that the "final aggregator outcome"
+    final_outcome = "uncertain"
     if a_votes / total >= mass_voter_threshold:
-        return "A"
-    if b_votes / total >= mass_voter_threshold:
-        return "B"
-    # If tie is big enough or we have < threshold
-    # we might call it 'tie' if tie is the biggest chunk
-    # or 'uncertain' if no side is above threshold
-    # This is just an example policy:
-    if tie_votes / total >= mass_voter_threshold:
-        return "tie"
-    
-    # Otherwise, not stable
-    return "uncertain"
+        final_outcome = "A"
+    elif b_votes / total >= mass_voter_threshold:
+        final_outcome = "B"
+    elif tie_votes / total >= mass_voter_threshold:
+        final_outcome = "tie"
+    # else remain "uncertain"
+
+    # If final_outcome is still "uncertain," no stable mass vote.
+    if final_outcome == "uncertain":
+        return "uncertain"
+
+    # 3) Check the round-sum aggregator from "battle_summary"
+    battle_summary = results.get("battle_summary")
+    if not battle_summary:
+        return "uncertain"
+
+    # e.g. "model_a_wins": X, "model_b_wins": Y, "ties": T
+    model_a_wins = battle_summary.get("model_a_wins", 0)
+    model_b_wins = battle_summary.get("model_b_wins", 0)
+    # we don't strictly need the "ties" count if we just see if A>B or B>A or ==
+
+    if model_a_wins > model_b_wins:
+        round_outcome = "A"
+    elif model_b_wins > model_a_wins:
+        round_outcome = "B"
+    else:
+        round_outcome = "tie"
+
+    # 4) Compare final_outcome vs. round_outcome
+    if final_outcome == round_outcome:
+        # If they match => we trust this is stable
+        return final_outcome
+    else:
+        # If final aggregator & round-sum aggregator disagree => "uncertain"
+        return "uncertain"
+
 
 ############################################################
 # Debate + Judge with Resume + threshold
@@ -118,7 +142,7 @@ def run_match_with_threshold(
         mB = ModelParticipant(model_b_id, role="debater")
         # single-round debate or multi-round if you want
         debate_orchestration(
-            participants=[mA, mB],
+            [mA, mB],
             topic= instruction_set[0],
             rounds=rounds,
             project_name=project_name,
@@ -249,6 +273,7 @@ def insert_model_with_binary_search(
 # Step4) produce final Elo
 ############################################################
 def main():
+    start_time = time.time()
     # Suppose we have a list of all models
     all_models = [
         "openrouter-claude-3.7-sonnet-thinking", 
@@ -289,7 +314,7 @@ def main():
     while not stable and iteration < max_iterations:
         stable = True
         # do round-robin
-        for i in range(len(base_5)):
+        for i in tqdm(range(len(base_5)), desc=f"Base RoundRobin Iteration {iteration+1}"):
             for j in range(i+1, len(base_5)):
                 outcome = run_match_with_threshold(
                     project_name,
@@ -297,7 +322,7 @@ def main():
                     base_5[j],
                     instruction_set,
                     rounds=round_num,
-                    judges=judges,
+                    judges_list=judges,
                     mass_voter_threshold=0.8
                 )
                 if outcome == "uncertain":
@@ -314,7 +339,7 @@ def main():
     # Step2: For each new model in new_ones, do insertion
     final_ranking = ranking_base[:]
 
-    for model in new_ones:
+    for model in tqdm(new_ones, desc="Inserting new models"):
         judges = random.sample(final_ranking, 5)
         final_ranking = insert_model_with_binary_search(
             model_id=model,
@@ -371,6 +396,9 @@ def main():
     print("\n=== FINAL ELO SCORES ===")
     for m,score in sorted_elo:
         print(m, round(score,2))
+    end_time = time.time()
+    elapsed = end_time - start_time
+    print(f"\nTotal runtime: {elapsed:.2f} seconds")
 
 if __name__=="__main__":
     main()
