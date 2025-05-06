@@ -36,20 +36,21 @@ def stable_round_robin_elo(
     if os.path.exists(f"{project_name}/ranking_state.json"):
         with open(f"{project_name}/ranking_state.json", "r") as f:
             state = json.load(f)
-        round_robin_state = state["BASE_ranking"]
-        print("Resuming from previous state:", round_robin_state)
+        round_robin_state = state["ranking_base"]
+        if round_robin_state:
+            print("Resuming from previous state:", round_robin_state)
+        else:
+            print("Starting from scratch of base models ranking")
+            round_robin_state = {
+                "elo":{}, #model_id:elo
+                "outcomes":{} #pair_key:outcome
+            }
     else:
-        round_robin_state = {
-            "elo":{}, #model_id:elo
-            "outcomes":{} #pair_key:outcome
-        }
-        print("Starting from scratch of base models ranking")
-    # For each pair i<j
-    for i in range(len(base_models)):
+        raise ValueError(f"No ranking_state.json found in {project_name}, need for base models ranking")
+    for i in tqdm(range(len(base_models)), desc="Base models ranking"):
         for j in tqdm(range(i+1, len(base_models)), desc=f"RoundRobin Iteration {i+1}"):
             A = base_models[i]
             B = base_models[j]
-
             sorted_pair = tuple(sorted([A,B]))
             pair_key    = f"{sorted_pair[0]}__vs__{sorted_pair[1]}"
 
@@ -495,7 +496,7 @@ def main():
 
     # Step1: Stable the base models
     judges = random.sample(all_models, 5)
-    if not base_stable_done:
+    if not base_stable_done: # If we haven't stable the base models yet, do it now
         base_model_elo = stable_round_robin_elo(base_models, judges, project_name, instruction_set, initial_rounds=3, max_rounds=9, mass_voter_threshold=0.8)
         sorted_base_model_elo = sorted(base_model_elo.items(), key=lambda x: x[1], reverse=True)
         ranking_base = [model for model, _ in sorted_base_model_elo]
@@ -505,12 +506,19 @@ def main():
             json.dump(state, f,indent=2)
         for model in ranking_base:
             print(model, base_model_elo[model])
+        print("Base models ranked")
 
-    # Step2: For each new model in new_ones, do insertion
+    # Step2: For each new model in new_ones, do insertion, start from insert_index
     final_ranking = ranking_base[:]
 
-    for model in tqdm(new_models, desc="Inserting new models"):
-        judges = random.sample(final_ranking, 5)
+    for idx in tqdm(range(insert_index, len(new_models)), desc="Inserting new models"):
+        model = new_models[idx]
+        judges = state["inserting_judges"][new_models[idx]]
+        if judges is None:
+            judges = random.sample(all_models, base_num) # choose base_num judges
+            state["inserting_judges"][new_models[idx]] = judges
+            with open(state_file, "w") as f:
+                json.dump(state, f,indent=2)
         final_ranking = insert_model_with_binary_search(
             model_id=model,
             ranked_list=final_ranking,
@@ -521,6 +529,12 @@ def main():
             mass_voter_threshold=0.8
         )
         print("After inserting", model, "ranking is now", final_ranking)
+
+        #update state
+        state["ranking_final"] = final_ranking
+        state["insert_index"] = idx + 1
+        with open(state_file, "w") as f:
+            json.dump(state, f,indent=2)
 
     # Step3: produce final Elo from all stable results
     # we can parse all "evaluation_results_{A}_{B}.json" in project_name/judgements
