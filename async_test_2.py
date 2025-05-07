@@ -92,9 +92,14 @@ async def main(max_concurrent=5):
 # -------------- Kick it off ------------------------------------------------
 if __name__ == "__main__":
     all_results = asyncio.run(main())
+
+    # Convert tuple keys to strings so JSON can serialize them
+    serializable_results = {f"{k[0]}__{k[1]}": v for k, v in all_results.items()}
+
     # Save a combined summary file
     with open(os.path.join(RESULTS_DIR, "all_debates_summary.json"), "w", encoding="utf-8") as f:
-        json.dump(all_results, f, indent=2, ensure_ascii=False)
+        json.dump(serializable_results, f, indent=2, ensure_ascii=False)
+
     print("\n=== All debates complete! ===")
     for k, v in all_results.items():
-        print(k, "→ winner:", v["final_assessment"]["overall_winner"])
+        print(f"{k[0]} vs {k[1]} → winner: {v.get('final_assessment', {}).get('overall_winner', 'N/A')}")

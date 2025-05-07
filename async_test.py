@@ -1,68 +1,59 @@
-# 
+# simple_async_debate.py
+import asyncio
+import json
+import time
+from model_interactions import ModelParticipant      # your wrapper class
+from async_orchestration import AsyncDebate_and_Judge  # your orchestrator
+import random
+async def main() -> None:
+    start_time = time.time()
+    # --- 1. Create participants -------------------------------------------
+    debater_a = ModelParticipant(model_id="o1",       role="debater")
+    debater_b = ModelParticipant(model_id="o4-mini",  role="debater")
+    
 
-
-# parallel_debates.py
-import asyncio, itertools, random
-from model_interactions import ModelParticipant
-from async_orchestration import AsyncDebate_and_Judge
-
-# ----- Prepare 10 debate specs (pick your own pairs) -----------------------
-pairs = [
-    ("o1", "o3"),
-    ("o1", "o4-mini"),
-    ("o3", "o4-mini"),
-    ("openrouter-Gemini-2.5-pro", "openrouter-QwQ-32B"),
-    ("openrouter-Grok-3-Beta", "openrouter-Qwen3-235B-A22B"),
-    ("deepseek", "openrouter-Amazon_Nova_1"),
-    ("openrouter-Gemini-2.5-flash-thinking", "openrouter-deepseek-v3-0324"),
-    ("openrouter-claude-3.7-sonnet-thinking", "o1"),
-    ("o3", "openrouter-Gemini-2.5-flash-thinking"),
-    ("o4-mini", "openrouter-claude-3.7-sonnet-thinking"),
-]
-
-topic = "General knowledge"
-detail = "Answer concisely in ≤40 words."
-instruction_set = [topic, detail]
-
-# A single list of shared judges (or pick per-debate)
-judge_ids = ["openrouter-Grok-3-Beta"]
-judges = [ModelParticipant(j, role="judge") for j in judge_ids]
-
-# -------------- Helper: run *one* debate spec -----------------------------
-async def run_single_debate(model_a_id, model_b_id, rounds=2):
-    debaters = [
-        ModelParticipant(model_a_id, role="debater"),
-        ModelParticipant(model_b_id, role="debater")
+    all_models = [
+        "openrouter-claude-3.7-sonnet-thinking", 
+        "openrouter-deepseek-v3-0324", 
+        "openrouter-Grok-3-Beta", 
+        "openrouter-Gemini-2.5-flash-thinking", 
+        "openrouter-QwQ-32B", 
+        "openrouter-Qwen3-235B-A22B", 
+        "openrouter-Gemini-2.5-pro",
+        "o1",
+        "o3",
+        "o4-mini",
+        "deepseek",
+        "openrouter-Amazon_Nova_1"
     ]
-    adj = AsyncDebate_and_Judge(
-        participants=debaters,
-        judges_list=judges,
-        instruction_set=instruction_set,
-        rounds=rounds,
+    judge_list = random.sample(all_models, 5)
+    judges = []
+    for judge in judge_list:
+        judges.append(ModelParticipant(model_id=judge, role="judge"))
+    topic="Question that is similar/related to the one in the given instruction ",
+    detailed_instructions=[
+        "Compose an engaging travel blog post about a recent trip to Hawaii, highlighting cultural experiences and must-see attractions.",
+        "Rewrite your previous response. Start every sentence with the letter A."
+    ]
+    # --- 2. Configure the debate ------------------------------------------
+    debate = AsyncDebate_and_Judge(
+        participants=[debater_a, debater_b],  
+        rounds=5,                             
+        judges_list=judges,                 
+        instruction_set=[topic, detailed_instructions]
     )
-    return await adj.run_debate()   # returns dict with transcript + scores
 
-# -------------- Master coroutine that throttles concurrency ---------------
-async def main(max_concurrent=5):
-    sem = asyncio.Semaphore(max_concurrent)
+    # --- 3. Run the debate --------------------------------------------------
+    results = await debate.run_debate()
 
-    async def run_with_sem(pair):
-        async with sem:
-            a, b = pair
-            print(f"▶️  Starting debate {a} vs {b}")
-            res = await run_single_debate(a, b)
-            print(f"✅ Finished debate {a} vs {b}")
-            return (pair, res)
-
-    tasks = [asyncio.create_task(run_with_sem(p)) for p in pairs]
-    results = await asyncio.gather(*tasks)
-    return dict(results)   # { (modelA,modelB): result_dict }
-
-# -------------- Kick it off ------------------------------------------------
-if __name__ == "__main__":
-    all_results = asyncio.run(main())
-    print("\n=== All debates complete! ===")
-    for k, v in all_results.items():
-        print(k, "→ winner:", v["final_assessment"]["overall_winner"])
+    # --- 4. Print or persist the outcome -----------------------------------
+    #    `results` is whatever your orchestrator returns (often a dict).
+        # --- 4. Persist the outcome to a JSON file -----------------------------
     with open("debate_results.json", "w", encoding="utf-8") as f:
-        json.dump(all_results, f, indent=2, ensure_ascii=False)
+        json.dump(results, f, indent=2, ensure_ascii=False)
+
+    # Optional: also pretty‑print to the console
+    end_time = time.time()
+    print(f"Debate with results completed in {end_time - start_time:.2f} seconds")
+if __name__ == "__main__":
+    asyncio.run(main())
