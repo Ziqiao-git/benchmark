@@ -1,6 +1,7 @@
 # parallel_debates.py
 import asyncio, itertools, random
 import os, json
+import traceback
 from model_interactions import ModelParticipant
 from async_orchestration import AsyncDebate_and_Judge
 
@@ -66,10 +67,20 @@ async def main(max_concurrent=5):
         async with sem:
             a, b = pair
             print(f"▶️  Starting debate {a} vs {b}")
-            res = await run_single_debate(a, b)
-            print(f"✅ Finished debate {a} vs {b}")
-            # Persist result to a JSON file
-            fname = f"debate_{a}_vs_{b}.json".replace("/", "_")
+            try:
+                res = await run_single_debate(a, b)
+                print(f"✅ Finished debate {a} vs {b}")
+            except Exception as e:
+                # Capture exception so the rest of the batch keeps running
+                print(f"❌ Debate {a} vs {b} failed: {e}")
+                res = {
+                    "error": str(e),
+                    "traceback": traceback.format_exc(),
+                    "model_a": a,
+                    "model_b": b,
+                }
+            # Persist success *or* failure to a JSON file
+            fname = f"debate_{a}_vs_{b}.json".replace('/', '_')
             with open(os.path.join(RESULTS_DIR, fname), "w", encoding="utf-8") as f:
                 json.dump(res, f, indent=2, ensure_ascii=False)
             return (pair, res)
