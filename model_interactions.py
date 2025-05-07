@@ -8,6 +8,7 @@ from langchain.prompts import PromptTemplate
 import asyncio
 
 
+
 class ParticipantInterface(ABC):
     """Base interface for all participants in a debate or evaluation."""
     
@@ -43,6 +44,29 @@ class ModelParticipant(ParticipantInterface):
         # Update history
         self.history.append({"context": context, "response": response})
         
+        return response
+    
+
+    async def generate_response_async(self, context: dict) -> str:
+        """
+        Asynchronous version of generate_response.
+
+        If the underlying model exposes an async `agenerate_messages` method,
+        call it directly. Otherwise execute the synchronous
+        `generate_messages` method in a thread‑pool executor so it doesn’t
+        block the event loop.
+        """
+        messages = self._format_messages(context)
+
+        # Prefer a native async path if the model provides one
+        if hasattr(self.model, "agenerate_messages") and asyncio.iscoroutinefunction(self.model.agenerate_messages):
+            response = await self.model.agenerate_messages(messages)
+        else:
+            loop = asyncio.get_running_loop()
+            response = await loop.run_in_executor(None, self.model.generate_messages, messages)
+
+        # Record history the same way the sync method does
+        self.history.append({"context": context, "response": response})
         return response
     
     def _format_messages(self, context: dict) -> List[tuple[str, str]]:

@@ -4,9 +4,9 @@ import random
 from typing import List, Dict
 from tqdm import tqdm
 import time
+import asyncio
+from async_orchestration import AsyncDebate_and_Judge
 
-from Debate_orchestration import debate_orchestration
-from Judge_orchestration import judge_orchestration
 from model_interactions import ModelParticipant
 from elo import update_elo
 
@@ -287,27 +287,34 @@ def run_match_with_threshold(
     if outcome != "uncertain":
         return outcome  # stable result -> no re-run
 
-    # If not stable, we do the debate:
-    # Also do a "resume check" for debate results
-    if not os.path.exists(debate_results_path):
-        # create participants
+    # If not stable, we do the debate asynchronously
+    async def _debate_and_judge_async():
+        # --------------- Build participants -----------------
         mA = ModelParticipant(model_a_id, role="debater")
         mB = ModelParticipant(model_b_id, role="debater")
-        # single-round debate or multi-round if you want
-        debate_orchestration(
-            [mA, mB],
-            topic= instruction_set[0],
+        judge_objs = [ModelParticipant(j_id, role="judge") for j_id in judges_list]
+
+        # --------------- Run async debate + judging ---------
+        adj = AsyncDebate_and_Judge(
+            participants=[mA, mB],
             rounds=rounds,
-            project_name=project_name,
-            detailed_instructions=instruction_set[1]
+            instruction_set=instruction_set,
+            judges_list=judge_objs,
         )
-    
-    # 2) Judge
-    judges = []
-    for judge in judges_list:
-        judges.append(ModelParticipant(judge, role="judge"))
-    print("Using these 5 judges:", judges_list)
-    judge_orchestration(debate_results_path, judges, project_name)
+        results = await adj.run_debate()
+
+        # --------------- Persist results --------------------
+        # Save a lightweight transcript file (optional but keeps old path alive)
+        with open(debate_results_path, "w", encoding="utf-8") as f:
+            json.dump({"transcript": results["transcript"]}, f, indent=2)
+
+        # Save the full evaluation block in the same schema expected by
+        # parse_evaluation_and_determine_winner()
+        with open(evaluation_path, "w", encoding="utf-8") as f:
+            json.dump({"evaluation": {"results": results}}, f, indent=2)
+
+    # Kick off the coroutine (blocks until finished)
+    asyncio.run(_debate_and_judge_async())
 
     # 3) parse again
     outcome2 = parse_evaluation_and_determine_winner(evaluation_path, mass_voter_threshold)
