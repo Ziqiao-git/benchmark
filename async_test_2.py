@@ -25,24 +25,32 @@ all_models = [
 pairs = list(combinations(all_models, 2))
 
 topic="Question that is similar/related to the one in the given instruction ",
-detailed_instructions=[
-    "Compose an engaging travel blog post about a recent trip to Hawaii, highlighting cultural experiences and must-see attractions.",
-    "Rewrite your previous response. Start every sentence with the letter A."
-]
-instruction_set = [topic, detailed_instructions]
 
 MAX_RETRIES = 5      # how many times to retry a failed debate
 
-# Directory to store JSON outputs for each debate
-RESULTS_DIR = "parallel_debate_results"
-os.makedirs(RESULTS_DIR, exist_ok=True)
-
-# A single list of shared judges (or pick per-debate)
-judge_ids = ["openrouter-Grok-3-Beta"]
-judges = [ModelParticipant(j, role="judge") for j in judge_ids]
+# ------------------------------------------------------------------
+# Ten variants of detailed instructions.  Fill in (or extend) as needed.
+# Each item is a 2‑element list like the old `detailed_instructions`.
+# ------------------------------------------------------------------
+detailed_instruction_sets = [
+    [
+        "Compose an engaging travel blog post about a recent trip to Hawaii, highlighting cultural experiences and must-see attractions.",
+        "Rewrite your previous response. Start every sentence with the letter A."
+    ],
+    # --------- 9 more variants go here --------------------------------
+    ["Give an executive summary of the latest IPCC report on climate change.", "Rewrite your answer but compress it to exactly three bullet points."],
+    ["Explain the basics of quantum entanglement to a 10‑year‑old.", "Rewrite your answer in the style of Dr. Seuss."],
+    ["Describe how a blockchain works in non‑technical terms.", "Rewrite your answer as a Shakespearean sonnet."],
+    ["List three actionable tips for improving personal productivity.", "Rewrite your answer but start each tip with the word 'Beware'."],
+    ["Summarize the plot of 'Pride and Prejudice' in 100 words.", "Rewrite your answer in pirate slang."],
+    ["Explain the significance of the Higgs boson discovery.", "Rewrite your answer but replace every noun with its emoji."],
+    ["Outline the steps to make sourdough bread at home.", "Rewrite your answer as a haiku."],
+    ["Describe the process of photosynthesis.", "Rewrite your answer backwards (reverse each sentence)."],
+    ["Give an overview of the French Revolution.", "Rewrite your answer limiting each sentence to five words."]
+]
 
 # -------------- Helper: run *one* debate spec -----------------------------
-async def run_single_debate(model_a_id, model_b_id, rounds=2):
+async def run_single_debate(model_a_id, model_b_id, rounds=3):
     debaters = [
         ModelParticipant(model_a_id, role="debater"),
         ModelParticipant(model_b_id, role="debater")
@@ -99,15 +107,30 @@ async def main(max_concurrent=10):
 
 # -------------- Kick it off ------------------------------------------------
 if __name__ == "__main__":
-    all_results = asyncio.run(main())
+    for idx, detailed_instructions in enumerate(detailed_instruction_sets, 1):
+        # Overwrite the globals that run_single_debate & main rely on
+        instruction_set = [topic, detailed_instructions]
+        RESULTS_DIR = f"MT_{idx}_parallel_debate_results"
+        os.makedirs(RESULTS_DIR, exist_ok=True)
 
-    # Convert tuple keys to strings so JSON can serialize them
-    serializable_results = {f"{k[0]}__{k[1]}": v for k, v in all_results.items()}
+        # Fresh random judges for this batch
+        judge_ids = random.sample(all_models, 5)
+        judges = [ModelParticipant(j, role="judge") for j in judge_ids]
 
-    # Save a combined summary file
-    with open(os.path.join(RESULTS_DIR, "all_debates_summary.json"), "w", encoding="utf-8") as f:
-        json.dump(serializable_results, f, indent=2, ensure_ascii=False)
+        print(f"\n=== Running instruction set {idx}/{len(detailed_instruction_sets)} ===")
+        all_results = asyncio.run(main())
 
-    print("\n=== All debates complete! ===")
-    for k, v in all_results.items():
-        print(f"{k[0]} vs {k[1]} → winner: {v.get('final_assessment', {}).get('overall_winner', 'N/A')}")
+        # Convert tuple keys to strings so JSON can serialize them
+        serializable_results = {f"{k[0]}__{k[1]}": v for k, v in all_results.items()}
+
+        # Save a combined summary file
+        with open(os.path.join(RESULTS_DIR, "all_debates_summary.json"), "w", encoding="utf-8") as f:
+            json.dump(serializable_results, f, indent=2, ensure_ascii=False)
+
+        # Simple console output of winners
+        for (a_b, res) in all_results.items():
+            a, b = a_b
+            winner = res.get("final_assessment", {}).get("overall_winner", "N/A")
+            print(f"{a} vs {b} → winner: {winner}")
+
+        print(f"✔️  Finished instruction set {idx}")
