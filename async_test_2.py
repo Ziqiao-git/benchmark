@@ -3,6 +3,8 @@ import asyncio, itertools, random
 from itertools import combinations
 import os, json
 import traceback
+from tqdm import tqdm
+from tqdm.asyncio import tqdm_asyncio
 from model_interactions import ModelParticipant
 from async_orchestration import AsyncDebate_and_Judge
 
@@ -83,7 +85,7 @@ async def main(max_concurrent=10):
             return (pair, res)
 
     tasks = [asyncio.create_task(run_with_sem(p)) for p in pairs]
-    results = await asyncio.gather(*tasks)
+    results = await tqdm_asyncio.gather(*tasks, total=len(tasks), desc="Debates")
 
     failed_pairs = [pair for pair, res in results if isinstance(res, dict) and res.get("error")]
     if failed_pairs:
@@ -92,8 +94,10 @@ async def main(max_concurrent=10):
 
     return dict(results)  
 if __name__ == "__main__":
-    for idx, detailed_instructions in enumerate(detailed_instruction_sets, 1):
-        # Overwrite the globals that run_single_debate & main rely on
+    # tqdm progress bar over the 10 detailed instruction sets
+    for idx, detailed_instructions in enumerate(
+        tqdm(detailed_instruction_sets, desc="Instruction sets", unit="set"), 1
+    ):
         instruction_set = [topic, detailed_instructions]
         RESULTS_DIR = f"MT_{idx}_parallel_debate_results"
         os.makedirs(RESULTS_DIR, exist_ok=True)
@@ -117,4 +121,5 @@ if __name__ == "__main__":
             a, b = a_b
             winner = res.get("final_assessment", {}).get("overall_winner", "N/A")
             print(f"{a} vs {b} → winner: {winner}")
+
         print(f"✔️  Finished instruction set {idx}")
