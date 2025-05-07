@@ -33,9 +33,12 @@ pairs = [
     ("o4-mini", "openrouter-claude-3.7-sonnet-thinking"),
 ]
 
-topic = "General knowledge"
-detail = "Answer concisely in ≤40 words."
-instruction_set = [topic, detail]
+topic="Question that is similar/related to the one in the given instruction ",
+detailed_instructions=[
+    "Compose an engaging travel blog post about a recent trip to Hawaii, highlighting cultural experiences and must-see attractions.",
+    "Rewrite your previous response. Start every sentence with the letter A."
+]
+instruction_set = [topic, detailed_instructions]
 
 # Directory to store JSON outputs for each debate
 RESULTS_DIR = "parallel_debate_results"
