@@ -6,7 +6,7 @@ import traceback
 from model_interactions import ModelParticipant
 from async_orchestration import AsyncDebate_and_Judge
 
-# ----- Prepare 10 debate specs (pick your own pairs) -----------------------
+
 all_models = [
     "openrouter-claude-3.7-sonnet-thinking", 
     "openrouter-deepseek-v3-0324", 
@@ -21,32 +21,22 @@ all_models = [
     "deepseek",
     "openrouter-Amazon_Nova_1"
 ]
-# ---- generate every unique unordered pair (66 total) --------------------
 pairs = list(combinations(all_models, 2))
 
-topic="Question that is similar/related to the one in the given instruction ",
+topic="Question that is similar/related to the one in the given instruction, but it should be more interesting and challenging",
 
 MAX_RETRIES = 5      # how many times to retry a failed debate
-
-# ------------------------------------------------------------------
-# Ten variants of detailed instructions.  Fill in (or extend) as needed.
-# Each item is a 2‑element list like the old `detailed_instructions`.
-# ------------------------------------------------------------------
 detailed_instruction_sets = [
-    [
-        "Compose an engaging travel blog post about a recent trip to Hawaii, highlighting cultural experiences and must-see attractions.",
-        "Rewrite your previous response. Start every sentence with the letter A."
-    ],
-    # --------- 9 more variants go here --------------------------------
-    ["Give an executive summary of the latest IPCC report on climate change.", "Rewrite your answer but compress it to exactly three bullet points."],
-    ["Explain the basics of quantum entanglement to a 10‑year‑old.", "Rewrite your answer in the style of Dr. Seuss."],
-    ["Describe how a blockchain works in non‑technical terms.", "Rewrite your answer as a Shakespearean sonnet."],
-    ["List three actionable tips for improving personal productivity.", "Rewrite your answer but start each tip with the word 'Beware'."],
-    ["Summarize the plot of 'Pride and Prejudice' in 100 words.", "Rewrite your answer in pirate slang."],
-    ["Explain the significance of the Higgs boson discovery.", "Rewrite your answer but replace every noun with its emoji."],
-    ["Outline the steps to make sourdough bread at home.", "Rewrite your answer as a haiku."],
-    ["Describe the process of photosynthesis.", "Rewrite your answer backwards (reverse each sentence)."],
-    ["Give an overview of the French Revolution.", "Rewrite your answer limiting each sentence to five words."]
+
+    ["Suppose you are a mathematician and poet. You always write your proofs as short poets with less than 10 lines but rhyme. Prove the square root of 2 is irrational number.", "Prove the Pythagorean theorem."],
+    ["Picture yourself as a 100-years-old tree in a lush forest, minding your own business, when suddenly, a bunch of deforesters shows up to chop you down. How do you feel when those guys start hacking away at you?", "Come up with a proposal to convince the deforesters to stop cutting you down and other trees."],
+    ["When rolling two dice, what is the probability that you roll a total number that is at least 3?", "Continue from previous question. What's the probability that you roll a number which is even or at least 3?"],
+    ["The vertices of a triangle are at points (0, 0), (-1, 1), and (3, 3). What is the area of the triangle?", "What's area of the circle circumscribing the triangle?"],
+    ["Thomas is very healthy, but he has to go to the hospital every day. What could be the reasons?", "Can you explain why the above question is interesting?"],
+    ["Describe a vivid and unique character, using strong imagery and creative language. Please answer in fewer than two paragraphs.", "Revise your previous response and incorporate an allusion to a famous work of literature or historical event in each sentence."],
+    ["Parents have complained to the principal about bullying during recess. The principal wants to quickly resolve this, instructing recess aides to be vigilant. Which situation should the aides report to the principal?\na) An unengaged girl is sitting alone on a bench, engrossed in a book and showing no interaction with her peers.\nb) Two boys engaged in a one-on-one basketball game are involved in a heated argument regarding the last scored basket.\nc) A group of four girls has surrounded another girl and appears to have taken possession of her backpack.\nd) Three boys are huddled over a handheld video game, which is against the rules and not permitted on school grounds.", "If the aides confront the group of girls from situation (c) and they deny bullying, stating that they were merely playing a game, what specific evidence should the aides look for to determine if this is a likely truth or a cover-up for bullying?"],
+    ["Which word does not belong with the others?\ntyre, steering wheel, car, engine", "Could you replace it with a word that belongs with the others?"],
+    ["Given that f(x) = 4x^3 - 9x - 14, find the value of f(2).", "Find x such that f(x) = 0."]
 ]
 
 # -------------- Helper: run *one* debate spec -----------------------------
@@ -62,8 +52,6 @@ async def run_single_debate(model_a_id, model_b_id, rounds=3):
         rounds=rounds,
     )
     return await adj.run_debate()   # returns dict with transcript + scores
-
-# -------------- Master coroutine that throttles concurrency ---------------
 async def main(max_concurrent=10):
     sem = asyncio.Semaphore(max_concurrent)
 
@@ -89,7 +77,6 @@ async def main(max_concurrent=10):
                             "attempts": attempt,
                         }
                         print(f"🛑  Giving up on {a} vs {b}")
-            # Persist result (success or failure)
             fname = f"debate_{a}_vs_{b}.json".replace('/', '_')
             with open(os.path.join(RESULTS_DIR, fname), "w", encoding="utf-8") as f:
                 json.dump(res, f, indent=2, ensure_ascii=False)
@@ -103,9 +90,7 @@ async def main(max_concurrent=10):
         with open(os.path.join(RESULTS_DIR, "state.json"), "w", encoding="utf-8") as f:
             json.dump({"failed_pairs": [f"{a}__{b}" for a, b in failed_pairs]}, f, indent=2, ensure_ascii=False)
 
-    return dict(results)   # { (modelA,modelB): result_dict }
-
-# -------------- Kick it off ------------------------------------------------
+    return dict(results)  
 if __name__ == "__main__":
     for idx, detailed_instructions in enumerate(detailed_instruction_sets, 1):
         # Overwrite the globals that run_single_debate & main rely on
@@ -132,5 +117,4 @@ if __name__ == "__main__":
             a, b = a_b
             winner = res.get("final_assessment", {}).get("overall_winner", "N/A")
             print(f"{a} vs {b} → winner: {winner}")
-
         print(f"✔️  Finished instruction set {idx}")
