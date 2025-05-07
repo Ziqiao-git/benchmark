@@ -1,5 +1,6 @@
 # parallel_debates.py
 import asyncio, itertools, random
+from itertools import combinations
 import os, json
 import traceback
 from model_interactions import ModelParticipant
@@ -20,18 +21,8 @@ all_models = [
     "deepseek",
     "openrouter-Amazon_Nova_1"
 ]
-pairs = [
-    ("o1", "o3"),
-    ("o1", "o4-mini"),
-    ("o3", "o4-mini"),
-    ("openrouter-Gemini-2.5-pro", "openrouter-QwQ-32B"),
-    ("openrouter-Grok-3-Beta", "openrouter-Qwen3-235B-A22B"),
-    ("deepseek", "openrouter-Amazon_Nova_1"),
-    ("openrouter-Gemini-2.5-flash-thinking", "openrouter-deepseek-v3-0324"),
-    ("openrouter-claude-3.7-sonnet-thinking", "o1"),
-    ("o3", "openrouter-Gemini-2.5-flash-thinking"),
-    ("o4-mini", "openrouter-claude-3.7-sonnet-thinking"),
-]
+# ---- generate every unique unordered pair (66 total) --------------------
+pairs = list(combinations(all_models, 2))
 
 topic="Question that is similar/related to the one in the given instruction ",
 detailed_instructions=[
@@ -39,6 +30,8 @@ detailed_instructions=[
     "Rewrite your previous response. Start every sentence with the letter A."
 ]
 instruction_set = [topic, detailed_instructions]
+
+MAX_RETRIES = 5      # how many times to retry a failed debate
 
 # Directory to store JSON outputs for each debate
 RESULTS_DIR = "parallel_debate_results"
@@ -63,26 +56,32 @@ async def run_single_debate(model_a_id, model_b_id, rounds=2):
     return await adj.run_debate()   # returns dict with transcript + scores
 
 # -------------- Master coroutine that throttles concurrency ---------------
-async def main(max_concurrent=5):
+async def main(max_concurrent=10):
     sem = asyncio.Semaphore(max_concurrent)
 
     async def run_with_sem(pair):
         async with sem:
             a, b = pair
-            print(f"▶️  Starting debate {a} vs {b}")
-            try:
-                res = await run_single_debate(a, b)
-                print(f"✅ Finished debate {a} vs {b}")
-            except Exception as e:
-                # Capture exception so the rest of the batch keeps running
-                print(f"❌ Debate {a} vs {b} failed: {e}")
-                res = {
-                    "error": str(e),
-                    "traceback": traceback.format_exc(),
-                    "model_a": a,
-                    "model_b": b,
-                }
-            # Persist success *or* failure to a JSON file
+            attempt = 0
+            while attempt < MAX_RETRIES:
+                attempt += 1
+                print(f"▶️  {a} vs {b}  (attempt {attempt}/{MAX_RETRIES})")
+                try:
+                    res = await run_single_debate(a, b)
+                    print(f"✅  Success {a} vs {b}")
+                    break
+                except Exception as e:
+                    print(f"❌  Attempt {attempt} for {a} vs {b} failed: {e}")
+                    if attempt == MAX_RETRIES:
+                        res = {
+                            "error": str(e),
+                            "traceback": traceback.format_exc(),
+                            "model_a": a,
+                            "model_b": b,
+                            "attempts": attempt,
+                        }
+                        print(f"🛑  Giving up on {a} vs {b}")
+            # Persist result (success or failure)
             fname = f"debate_{a}_vs_{b}.json".replace('/', '_')
             with open(os.path.join(RESULTS_DIR, fname), "w", encoding="utf-8") as f:
                 json.dump(res, f, indent=2, ensure_ascii=False)
@@ -90,6 +89,12 @@ async def main(max_concurrent=5):
 
     tasks = [asyncio.create_task(run_with_sem(p)) for p in pairs]
     results = await asyncio.gather(*tasks)
+
+    failed_pairs = [pair for pair, res in results if isinstance(res, dict) and res.get("error")]
+    if failed_pairs:
+        with open(os.path.join(RESULTS_DIR, "state.json"), "w", encoding="utf-8") as f:
+            json.dump({"failed_pairs": [f"{a}__{b}" for a, b in failed_pairs]}, f, indent=2, ensure_ascii=False)
+
     return dict(results)   # { (modelA,modelB): result_dict }
 
 # -------------- Kick it off ------------------------------------------------
