@@ -30,11 +30,11 @@ topic="Question that is similar/related to the one in the given instruction, but
 MAX_RETRIES = 5      # how many times to retry a failed debate
 detailed_instruction_sets = [
 
-    ["Suppose you are a mathematician and poet. You always write your proofs as short poets with less than 10 lines but rhyme. Prove the square root of 2 is irrational number.", "Prove the Pythagorean theorem."],
-    ["Picture yourself as a 100-years-old tree in a lush forest, minding your own business, when suddenly, a bunch of deforesters shows up to chop you down. How do you feel when those guys start hacking away at you?", "Come up with a proposal to convince the deforesters to stop cutting you down and other trees."],
-    ["When rolling two dice, what is the probability that you roll a total number that is at least 3?", "Continue from previous question. What's the probability that you roll a number which is even or at least 3?"],
-    ["The vertices of a triangle are at points (0, 0), (-1, 1), and (3, 3). What is the area of the triangle?", "What's area of the circle circumscribing the triangle?"],
-    ["Thomas is very healthy, but he has to go to the hospital every day. What could be the reasons?", "Can you explain why the above question is interesting?"],
+    # ["Suppose you are a mathematician and poet. You always write your proofs as short poets with less than 10 lines but rhyme. Prove the square root of 2 is irrational number.", "Prove the Pythagorean theorem."],
+    # ["Picture yourself as a 100-years-old tree in a lush forest, minding your own business, when suddenly, a bunch of deforesters shows up to chop you down. How do you feel when those guys start hacking away at you?", "Come up with a proposal to convince the deforesters to stop cutting you down and other trees."],
+    # ["When rolling two dice, what is the probability that you roll a total number that is at least 3?", "Continue from previous question. What's the probability that you roll a number which is even or at least 3?"],
+    # ["The vertices of a triangle are at points (0, 0), (-1, 1), and (3, 3). What is the area of the triangle?", "What's area of the circle circumscribing the triangle?"],
+    # ["Thomas is very healthy, but he has to go to the hospital every day. What could be the reasons?", "Can you explain why the above question is interesting?"],
     ["Describe a vivid and unique character, using strong imagery and creative language. Please answer in fewer than two paragraphs.", "Revise your previous response and incorporate an allusion to a famous work of literature or historical event in each sentence."],
     ["Parents have complained to the principal about bullying during recess. The principal wants to quickly resolve this, instructing recess aides to be vigilant. Which situation should the aides report to the principal?\na) An unengaged girl is sitting alone on a bench, engrossed in a book and showing no interaction with her peers.\nb) Two boys engaged in a one-on-one basketball game are involved in a heated argument regarding the last scored basket.\nc) A group of four girls has surrounded another girl and appears to have taken possession of her backpack.\nd) Three boys are huddled over a handheld video game, which is against the rules and not permitted on school grounds.", "If the aides confront the group of girls from situation (c) and they deny bullying, stating that they were merely playing a game, what specific evidence should the aides look for to determine if this is a likely truth or a cover-up for bullying?"],
     ["Which word does not belong with the others?\ntyre, steering wheel, car, engine", "Could you replace it with a word that belongs with the others?"],
@@ -56,6 +56,22 @@ async def run_single_debate(model_a_id, model_b_id, rounds=3):
     return await adj.run_debate()   # returns dict with transcript + scores
 async def main(max_concurrent=10):
     sem = asyncio.Semaphore(max_concurrent)
+
+    # ---------------------------------------------------
+    # Resume support: skip pairs that already have result files
+    # ---------------------------------------------------
+    completed_pairs = set()
+    if os.path.isdir(RESULTS_DIR):
+        for fname in os.listdir(RESULTS_DIR):
+            if fname.startswith("debate_") and fname.endswith(".json"):
+                core = fname[len("debate_"):-len(".json")]          # modelA_vs_modelB
+                a, _, b = core.partition("_vs_")
+                if a and b:
+                    completed_pairs.add((a, b))
+    pending_pairs = [p for p in pairs if p not in completed_pairs]
+    if not pending_pairs:
+        print("🔄  All pairs in this instruction set already processed.")
+        return {}
 
     async def run_with_sem(pair):
         async with sem:
@@ -84,8 +100,8 @@ async def main(max_concurrent=10):
                 json.dump(res, f, indent=2, ensure_ascii=False)
             return (pair, res)
 
-    tasks = [asyncio.create_task(run_with_sem(p)) for p in pairs]
-    results = await tqdm_asyncio.gather(*tasks, total=len(tasks), desc="Debates")
+    tasks = [asyncio.create_task(run_with_sem(p)) for p in pending_pairs]
+    results = await tqdm_asyncio.gather(*tasks, total=len(pending_pairs), desc="Debates")
 
     failed_pairs = [pair for pair, res in results if isinstance(res, dict) and res.get("error")]
     if failed_pairs:

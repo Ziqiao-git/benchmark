@@ -273,8 +273,15 @@ class AsyncDebate_and_Judge:
                 "input": prompt
             }
 
-            # Call the judge model (async)
-            judgment_raw = await judge.generate_response_async(judge_context)
+            # Call the judge model with a timeout (skip if it hangs)
+            try:
+                judgment_raw = await asyncio.wait_for(
+                    judge.generate_response_async(judge_context),
+                    timeout=90,   # seconds; tweak as needed
+                )
+            except asyncio.TimeoutError:
+                round_judgments[judge.model_id] = {"error": "timeout"}
+                continue
 
             try:
                 # Parse structured output
@@ -425,8 +432,14 @@ class AsyncDebate_and_Judge:
                 "input": prompt
             }
 
-            # Call judge (sync or async) - here we assume async
-            assessment_raw = await judge.generate_response_async(judge_context)
+            try:
+                assessment_raw = await asyncio.wait_for(
+                    judge.generate_response_async(judge_context),
+                    timeout=120,  # holistic judgment might take longer
+                )
+            except asyncio.TimeoutError:
+                final_assessments[judge.model_id] = {"error": "timeout"}
+                continue
             try:
                 final_struct = final_parser.parse(assessment_raw)
                 final_assessments[judge.model_id] = final_struct.dict()
