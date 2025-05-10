@@ -170,6 +170,21 @@
         "class": "LangChainAdapter"
       }
     },
+    "openrouter-claude-3.5-haiku": {
+      "module": "langchain_openai",
+      "class": "ChatOpenAI",
+      "api_key_env": "OPENROUTER_API_KEY", 
+      "api_key_param": "api_key",
+      "params": {
+        "model": "anthropic/claude-3.5-haiku",
+        "temperature": 0.7,
+        "base_url": "https://openrouter.ai/api/v1"
+      },
+      "wrapper": {
+        "module": "adapters",
+        "class": "LangChainAdapter"
+      }
+    },
     "openrouter-Grok-3-Beta": {
       "module": "langchain_openai",
       "class": "ChatOpenAI",
@@ -230,13 +245,28 @@
         "class": "LangChainAdapter"
       }
     },
-    "openrouter-QwQ-32B": {
+    "openrouter-Qwen-32B": {
       "module": "langchain_openai",
       "class": "ChatOpenAI",
       "api_key_env": "OPENROUTER_API_KEY", 
       "api_key_param": "api_key",
       "params": {
         "model": "qwen/qwen3-32b",
+        "temperature": 0.7,
+        "base_url": "https://openrouter.ai/api/v1"
+      },
+      "wrapper": {
+        "module": "adapters",
+        "class": "LangChainAdapter"
+      }
+    },
+    "openrouter-QwQ-32B": {
+      "module": "langchain_openai",
+      "class": "ChatOpenAI",
+      "api_key_env": "OPENROUTER_API_KEY", 
+      "api_key_param": "api_key",
+      "params": {
+        "model": "qwen/qwq-32b",
         "temperature": 0.7,
         "base_url": "https://openrouter.ai/api/v1"
       },
@@ -267,6 +297,126 @@
       "api_key_param": "api_key",
       "params": {
         "model": "amazon/nova-pro-v1",
+        "temperature": 0.7,
+        "base_url": "https://openrouter.ai/api/v1"
+      },
+      "wrapper": {
+        "module": "adapters",
+        "class": "LangChainAdapter"
+      }
+    },    
+    "openrouter-google-gemma-2-27b-it": {
+      "module": "langchain_openai",
+      "class": "ChatOpenAI",
+      "api_key_env": "OPENROUTER_API_KEY", 
+      "api_key_param": "api_key",
+      "params": {
+        "model": "google/gemma-2-27b-it",
+        "temperature": 0.7,
+        "base_url": "https://openrouter.ai/api/v1"
+      },
+      "wrapper": {
+        "module": "adapters",
+        "class": "LangChainAdapter"
+      }
+    },
+    "openrouter-qwen-qwen-2.5-72b-instruct": {
+      "module": "langchain_openai",
+      "class": "ChatOpenAI",
+      "api_key_env": "OPENROUTER_API_KEY", 
+      "api_key_param": "api_key",
+      "params": {
+        "model": "qwen/qwen-2.5-72b-instruct",
+        "temperature": 0.7,
+        "base_url": "https://openrouter.ai/api/v1"
+      },
+      "wrapper": {
+        "module": "adapters",
+        "class": "LangChainAdapter"
+      }
+    },
+    "openrouter-meta-llama-llama-3.3-70b-instruct": {
+      "module": "langchain_openai",
+      "class": "ChatOpenAI",
+      "api_key_env": "OPENROUTER_API_KEY", 
+      "api_key_param": "api_key",
+      "params": {
+        "model": "meta-llama/llama-3.3-70b-instruct",
+        "temperature": 0.7,
+        "base_url": "https://openrouter.ai/api/v1"
+      },
+      "wrapper": {
+        "module": "adapters",
+        "class": "LangChainAdapter"
+      }
+    },
+    "openrouter-mistral-8x7b-instruct": {
+      "module": "langchain_openai",
+      "class": "ChatOpenAI",
+      "api_key_env": "OPENROUTER_API_KEY", 
+      "api_key_param": "api_key",
+      "params": {
+        "model": "mistralai/mixtral-8x7b-instruct",
+        "temperature": 0.7,
+        "base_url": "https://openrouter.ai/api/v1"
+      },
+      "wrapper": {
+        "module": "adapters",
+        "class": "LangChainAdapter"
+      }
+    },
+    "openrouter-qwen-2-72b-instruct": {
+      "module": "langchain_openai",
+      "class": "ChatOpenAI",
+      "api_key_env": "OPENROUTER_API_KEY", 
+      "api_key_param": "api_key",
+      "params": {
+        "model": "qwen/qwen-2-72b-instruct",
+        "temperature": 0.7,
+        "base_url": "https://openrouter.ai/api/v1"
+      },
+      "wrapper": {
+        "module": "adapters",
+        "class": "LangChainAdapter"
+      }
+    },
+    "openrouter-mistralai-mistral-7b-instruct-v0.2": {
+      "module": "langchain_openai",
+      "class": "ChatOpenAI",
+      "api_key_env": "OPENROUTER_API_KEY", 
+      "api_key_param": "api_key",
+      "params": {
+        "model": "mistralai/mistral-7b-instruct-v0.2",
+        "temperature": 0.7,
+        "base_url": "https://openrouter.ai/api/v1"
+      },
+      "wrapper": {
+        "module": "adapters",
+        "class": "LangChainAdapter"
+      }
+    },
+    "openrouter-google-gemma-2-9b-it": {
+      "module": "langchain_openai",
+      "class": "ChatOpenAI",
+      "api_key_env": "OPENROUTER_API_KEY", 
+      "api_key_param": "api_key",
+      "params": {
+        "model": "google/gemma-2-9b-it",
+        "temperature": 0.7,
+        "base_url": "https://openrouter.ai/api/v1"
+      },
+      "wrapper": {
+        "module": "adapters",
+        "class": "LangChainAdapter"
+      }
+    },
+    "openrouter-phi-4-reasoning-plus": {
+      "module": "langchain_openai",
+      "class": "ChatOpenAI",
+      "api_key_env": "OPENROUTER_API_KEY", 
+      "api_key_param": "api_key",
+      "params": {
+        "model": "microsoft/phi-4-reasoning-plus",
         "temperature": 0.7,
         "base_url": "https://openrouter.ai/api/v1"
       },

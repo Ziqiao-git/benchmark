@@ -10,18 +10,38 @@ from async_orchestration import AsyncDebate_and_Judge
 
 
 all_models = [
-    "openrouter-claude-3.7-sonnet-thinking", 
-    "openrouter-deepseek-v3-0324", 
-    "openrouter-Grok-3-Beta", 
-    # "openrouter-Gemini-2.5-flash-thinking", 
-    "openrouter-QwQ-32B", 
-    "openrouter-Qwen3-235B-A22B", 
-    # "openrouter-Gemini-2.5-pro",
-    "o1",
-    "o3",
-    "o4-mini",
+    # 1. Deepseek-R1
     "deepseek",
-    "openrouter-Amazon_Nova_1"
+    # 2. O1
+    "o1",
+    # 3. Qwen3-235B
+    "openrouter-Qwen3-235B-A22B",
+    # 4. Claude-3.7
+    "openrouter-claude-3.7-sonnet-thinking",
+    # 5. GPT-4o
+    "gpt4o",
+    # 6. DeepSeek-V3
+    "openrouter-deepseek-v3-0324",
+    # 7. Qwen2.5-72B-Instruct (not in file; closest is openrouter-qwen-2-72b-instruct)
+    "openrouter-qwen-2-72b-instruct",
+    # 8. llama-3.3-70b-instruct
+    "openrouter-meta-llama-llama-3.3-70b-instruct",
+    # 9. Claude-3.5
+    "openrouter-claude-3.5-haiku",
+    # 10. mistralai/mixtral-8x7b-instruct
+    "openrouter-mistral-8x7b-instruct",
+    # 11. Gemma-2-27B
+    "openrouter-google-gemma-2-27b-it",
+    # 12. qwen/qwen-2-72b-instruct
+    "openrouter-qwen-2-72b-instruct",
+    # 13. Mistral-7b-instructv02
+    "openrouter-mistralai-mistral-7b-instruct-v0.2",
+    # 14. Gemma-2-9B
+    "openrouter-google-gemma-2-9b-it",
+    # 15. microsoft/phi-4-reasoning-plus
+    "openrouter-phi-4-reasoning-plus",
+    #16. QwQ-32B
+    "openrouter-QwQ-32B",
 ]
 pairs = list(combinations(all_models, 2))
 

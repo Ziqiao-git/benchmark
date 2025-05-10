@@ -38,7 +38,7 @@ def compute_spearman_from_json(json_data1, json_data2):
 
 if __name__ == "__main__":
     # Example usage with two JSON files on disk:
-    with open("/Users/xiziqiao/Documents/Chat_models/MT_1_parallel_debate_results/folder_elo_scores_standalone.json", "r", encoding="utf-8") as f:
+    with open("/Users/xiziqiao/Documents/Chat_models/MT_5R_10J_1_parallel_debate_results/folder_elo_scores_standalone.json", "r", encoding="utf-8") as f:
         data1 = json.load(f)
     with open("/Users/xiziqiao/Documents/Chat_models/MT_1_9R_9J_parallel_debate_results/folder_elo_scores_standalone.json", "r", encoding="utf-8") as f:
         data2 = json.load(f)
