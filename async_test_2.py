@@ -13,10 +13,10 @@ all_models = [
     "openrouter-claude-3.7-sonnet-thinking", 
     "openrouter-deepseek-v3-0324", 
     "openrouter-Grok-3-Beta", 
-    "openrouter-Gemini-2.5-flash-thinking", 
+    # "openrouter-Gemini-2.5-flash-thinking", 
     "openrouter-QwQ-32B", 
     "openrouter-Qwen3-235B-A22B", 
-    "openrouter-Gemini-2.5-pro",
+    # "openrouter-Gemini-2.5-pro",
     "o1",
     "o3",
     "o4-mini",
@@ -29,20 +29,12 @@ topic="Question that is similar/related to the one in the given instruction, but
 
 MAX_RETRIES = 5      # how many times to retry a failed debate
 detailed_instruction_sets = [
+["Compose an engaging travel blog post about a recent trip to Hawaii, highlighting cultural experiences and must-see attractions.", "Rewrite your previous response. Start every sentence with the letter A."]
 
-    # ["Suppose you are a mathematician and poet. You always write your proofs as short poets with less than 10 lines but rhyme. Prove the square root of 2 is irrational number.", "Prove the Pythagorean theorem."],
-    # ["Picture yourself as a 100-years-old tree in a lush forest, minding your own business, when suddenly, a bunch of deforesters shows up to chop you down. How do you feel when those guys start hacking away at you?", "Come up with a proposal to convince the deforesters to stop cutting you down and other trees."],
-    # ["When rolling two dice, what is the probability that you roll a total number that is at least 3?", "Continue from previous question. What's the probability that you roll a number which is even or at least 3?"],
-    # ["The vertices of a triangle are at points (0, 0), (-1, 1), and (3, 3). What is the area of the triangle?", "What's area of the circle circumscribing the triangle?"],
-    # ["Thomas is very healthy, but he has to go to the hospital every day. What could be the reasons?", "Can you explain why the above question is interesting?"],
-    ["Describe a vivid and unique character, using strong imagery and creative language. Please answer in fewer than two paragraphs.", "Revise your previous response and incorporate an allusion to a famous work of literature or historical event in each sentence."],
-    ["Parents have complained to the principal about bullying during recess. The principal wants to quickly resolve this, instructing recess aides to be vigilant. Which situation should the aides report to the principal?\na) An unengaged girl is sitting alone on a bench, engrossed in a book and showing no interaction with her peers.\nb) Two boys engaged in a one-on-one basketball game are involved in a heated argument regarding the last scored basket.\nc) A group of four girls has surrounded another girl and appears to have taken possession of her backpack.\nd) Three boys are huddled over a handheld video game, which is against the rules and not permitted on school grounds.", "If the aides confront the group of girls from situation (c) and they deny bullying, stating that they were merely playing a game, what specific evidence should the aides look for to determine if this is a likely truth or a cover-up for bullying?"],
-    ["Which word does not belong with the others?\ntyre, steering wheel, car, engine", "Could you replace it with a word that belongs with the others?"],
-    ["Given that f(x) = 4x^3 - 9x - 14, find the value of f(2).", "Find x such that f(x) = 0."]
 ]
 
 # -------------- Helper: run *one* debate spec -----------------------------
-async def run_single_debate(model_a_id, model_b_id, rounds=3):
+async def run_single_debate(model_a_id, model_b_id, rounds=9):
     debaters = [
         ModelParticipant(model_a_id, role="debater"),
         ModelParticipant(model_b_id, role="debater")
@@ -115,12 +107,14 @@ if __name__ == "__main__":
         tqdm(detailed_instruction_sets, desc="Instruction sets", unit="set"), 1
     ):
         instruction_set = [topic, detailed_instructions]
-        RESULTS_DIR = f"MT_{idx}_parallel_debate_results"
+        RESULTS_DIR = f"MT_{idx}_9R_9J_parallel_debate_results"
         os.makedirs(RESULTS_DIR, exist_ok=True)
 
         # Fresh random judges for this batch
         judge_ids = random.sample(all_models, 5)
         judges = [ModelParticipant(j, role="judge") for j in judge_ids]
+        # Do not let Nova be a judge
+        judges = [j for j in judges if j != "openrouter-Amazon_Nova_1"]
 
         print(f"\n=== Running instruction set {idx}/{len(detailed_instruction_sets)} ===")
         all_results = asyncio.run(main())

@@ -3,18 +3,18 @@ import os
 from scipy.stats import spearmanr
 
 all_models = [
-    "openrouter-Gemini-2.5-pro",       # 1. Gemini-2.5-pro
-    "o3",                              # 2. GPT
-    "openrouter-Grok-3-Beta",         # 3. Grok-3-Beta
-    "openrouter-Gemini-2.5-flash-thinking",  # 4. Gemini-2.5-Flash-thinking
-    "openrouter-deepseek-v3-0324",    # 5. deepseek-v3-0324
-    "deepseek",                       # 6. Deepseek-R1
-    "o4-mini",                        # 7. GPT
-    "o1",                             # 8. GPT
-    "openrouter-Qwen3-235B-A22B",     # 9. Qwen3-235B-A22B
-    "openrouter-QwQ-32B",             # 10. QwQ-32B
-    "openrouter-claude-3.7-sonnet-thinking",  # 11. Claude-3.7-Sonnet-thinking
-    "openrouter-Amazon_Nova_1"        # 12. Amazon:Nova Pro 1.0
+    "openrouter-Gemini-2.5-pro",      
+    "openrouter-Qwen3-235B-A22B",
+    "deepseek",
+    "o1",
+    "openrouter-QwQ-32B", 
+    "o3",
+    "openrouter-deepseek-v3-0324",                                
+    "openrouter-Grok-3-Beta",       
+    "openrouter-Gemini-2.5-flash-thinking",  
+    "o4-mini",                      
+    "openrouter-claude-3.7-sonnet-thinking",  
+    "openrouter-Amazon_Nova_1" 
 ]
 
 
@@ -24,12 +24,12 @@ base_dir = os.getcwd()
 NUM_FOLDERS = 10
 
 for i in range(1, NUM_FOLDERS +2):
-    folder_name = f"MT_{i}_parallel_debate_results"
+    folder_name = f"Code{i}_1_parallel_debate_results"
     folder_path = os.path.join(base_dir, folder_name)
     if i == NUM_FOLDERS + 1:
-        JSON_FILE_PATH = "final_elo_scores.json"  
+        JSON_FILE_PATH = "final_elo_scores_aggregated.json"  
     else:
-        JSON_FILE_PATH = os.path.join(folder_path, f"folder_elo_scores.json")  # Change as needed
+        JSON_FILE_PATH = os.path.join(folder_path, f"folder_elo_scores_standalone.json")  # separate elo scores for each folder
 
     # Read JSON content
     with open(JSON_FILE_PATH, "r", encoding="utf-8") as f:
