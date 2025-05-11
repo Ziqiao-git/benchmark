@@ -142,7 +142,7 @@ def main():
     # 1) First, do aggregator pass
     aggregator_elo = {m: 1200 for m in MODELS}  # start everyone at 1200
     for i in range(1, NUM_FOLDERS + 1):
-        folder_name = f"MT_{i}_9R_9J_parallel_debate_results"
+        folder_name = f"Math_3R_5J_{i}"
         folder_path = os.path.join(base_dir, folder_name)
 
         if not os.path.isdir(folder_path):
@@ -174,7 +174,7 @@ def main():
 
     # 2) Next, do standalone pass
     for i in range(1, NUM_FOLDERS + 1):
-        folder_name = f"MT_{i}_9R_9J_parallel_debate_results"
+        folder_name = f"Math_3R_5J_{i}"
         folder_path = os.path.join(base_dir, folder_name)
 
         if not os.path.isdir(folder_path):

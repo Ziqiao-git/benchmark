@@ -127,14 +127,13 @@ if __name__ == "__main__":
         tqdm(detailed_instruction_sets, desc="Instruction sets", unit="set"), 1
     ):
         instruction_set = [topic, detailed_instructions]
-        RESULTS_DIR = f"MT_{idx}_9R_9J_parallel_debate_results"
+        RESULTS_DIR = f"MT_{idx}_9R_16J_parallel_debate_results"
         os.makedirs(RESULTS_DIR, exist_ok=True)
 
         # Fresh random judges for this batch
-        judge_ids = random.sample(all_models, 5)
+        judge_ids = all_models
         judges = [ModelParticipant(j, role="judge") for j in judge_ids]
         # Do not let Nova be a judge
-        judges = [j for j in judges if j != "openrouter-Amazon_Nova_1"]
 
         print(f"\n=== Running instruction set {idx}/{len(detailed_instruction_sets)} ===")
         all_results = asyncio.run(main())
