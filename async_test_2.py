@@ -45,11 +45,11 @@ all_models = [
 ]
 pairs = list(combinations(all_models, 2))
 
-topic="Question that is similar/related to the one in the given instruction, but it should be more interesting and challenging",
+topic="Questioner is a client of the responder, who propose a real life very challenging and sophisticated needs that need to be addressed, the question should not be too general or trivial or not related to the real life. The responder need to give a valid profession solution to questioner's need, and the solution should be a valid profession solution",
 
 
 detailed_instruction_sets = [
-["Compose an engaging travel blog post about a recent trip to Hawaii, highlighting cultural experiences and must-see attractions.", "Rewrite your previous response. Start every sentence with the letter A."]
+["Computer and Information Systems Managers Plan, direct, or coordinate activities in such fields as electronic data processing, information systems, systems analysis, and computer programming."]
 
 ]
 
@@ -121,7 +121,7 @@ if __name__ == "__main__":
         tqdm(detailed_instruction_sets, desc="Instruction sets", unit="set"), 1
     ):
         instruction_set = [topic, detailed_instructions]
-        RESULTS_DIR = f"MT_{idx}_9R_16J_parallel_debate_results"
+        RESULTS_DIR = f"JOB_CS_{idx}_9R_16J_parallel_debate_results"
         os.makedirs(RESULTS_DIR, exist_ok=True)
 
         # Fresh random judges for this batch

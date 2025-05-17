@@ -48,65 +48,65 @@ class ModelParticipant(ParticipantInterface):
         
         return response
     
-async def generate_response_async(self, context: dict, max_retry: int = 3) -> str:
-    """
-    Async with internal retry/back-off AND automatic history-trimming
-    when the provider complains about context length.
-    """
-    import random, asyncio
-    from json.decoder import JSONDecodeError
+    async def generate_response_async(self, context: dict, max_retry: int = 3) -> str:
+        """
+        Async with internal retry/back-off AND automatic history-trimming
+        when the provider complains about context length.
+        """
+        import random, asyncio
+        from json.decoder import JSONDecodeError
 
-    ctx        = dict(context)               # make a mutable copy
-    full_hist  = list(ctx.get("history") or [])
-    base_delay = 1.5
+        ctx        = dict(context)               # make a mutable copy
+        full_hist  = list(ctx.get("history") or [])
+        base_delay = 1.5
 
-    for attempt in range(1, max_retry + 1):
-        ctx["history"] = full_hist           # current slice
-        messages = self._format_messages(ctx)
+        for attempt in range(1, max_retry + 1):
+            ctx["history"] = full_hist           # current slice
+            messages = self._format_messages(ctx)
 
-        try:
-            # ---- model call ------------------------------------------------
-            if (
-                hasattr(self.model, "agenerate_messages")
-                and asyncio.iscoroutinefunction(self.model.agenerate_messages)
-            ):
-                response = await self.model.agenerate_messages(messages)
-            else:
-                loop = asyncio.get_running_loop()
-                response = await loop.run_in_executor(
-                    None, self.model.generate_messages, messages
-                )
+            try:
+                # ---- model call ------------------------------------------------
+                if (
+                    hasattr(self.model, "agenerate_messages")
+                    and asyncio.iscoroutinefunction(self.model.agenerate_messages)
+                ):
+                    response = await self.model.agenerate_messages(messages)
+                else:
+                    loop = asyncio.get_running_loop()
+                    response = await loop.run_in_executor(
+                        None, self.model.generate_messages, messages
+                    )
 
-            # success
-            self.history.append({"context": ctx, "response": response})
-            return response
+                # success
+                self.history.append({"context": ctx, "response": response})
+                return response
 
-        # -------- handle known transient errors ----------------------------
-        except (JSONDecodeError, ValueError) as e:
-            err      = f"JSON decode error: {e}"
-            retry_ok = True
+            # -------- handle known transient errors ----------------------------
+            except (JSONDecodeError, ValueError) as e:
+                err      = f"JSON decode error: {e}"
+                retry_ok = True
 
-        except Exception as e:
-            err_txt = str(e)
-            # token-limit / context-length complaint
-            if "maximum context length" in err_txt or "max_tokens" in err_txt:
-                if full_hist:                       # we still have something to trim
-                    drop = max(1, len(full_hist) // 2)
-                    full_hist = full_hist[drop:]    # keep only the newest part
-                    print(f"⚠️  {self.model_id}: context too long → dropped {drop} history msgs; retrying")
-                    continue                        # do NOT count as a retry
-            err      = f"{type(e).__name__}: {e}"
-            retry_ok = True
+            except Exception as e:
+                err_txt = str(e)
+                # token-limit / context-length complaint
+                if "maximum context length" in err_txt or "max_tokens" in err_txt:
+                    if full_hist:                       # we still have something to trim
+                        drop = max(1, len(full_hist) // 2)
+                        full_hist = full_hist[drop:]    # keep only the newest part
+                        print(f"⚠️  {self.model_id}: context too long → dropped {drop} history msgs; retrying")
+                        continue                        # do NOT count as a retry
+                err      = f"{type(e).__name__}: {e}"
+                retry_ok = True
 
-        # -------- give up or back-off --------------------------------------
-        if attempt == max_retry or not retry_ok:
-            msg = f"{self.model_id}: {err} — giving up after {attempt} tries"
-            print(f"🛑  {msg}")
-            raise RuntimeError(msg)
+            # -------- give up or back-off --------------------------------------
+            if attempt == max_retry or not retry_ok:
+                msg = f"{self.model_id}: {err} — giving up after {attempt} tries"
+                print(f"🛑  {msg}")
+                raise RuntimeError(msg)
 
-        delay = base_delay * 2 ** (attempt - 1) * (0.8 + 0.4 * random.random())
-        print(f"⏳  {self.model_id}: retrying in {delay:.1f}s ({attempt}/{max_retry})")
-        await asyncio.sleep(delay)
+            delay = base_delay * 2 ** (attempt - 1) * (0.8 + 0.4 * random.random())
+            print(f"⏳  {self.model_id}: retrying in {delay:.1f}s ({attempt}/{max_retry})")
+            await asyncio.sleep(delay)
     
     def _format_messages(self, context: dict) -> List[tuple[str, str]]:
         """Format context into messages for the model."""
