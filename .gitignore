@@ -8,4 +8,5 @@ results/
 *.jsonl
 *.txt
 *.csv
+*.DS_Store
 
