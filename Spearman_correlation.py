@@ -24,7 +24,7 @@ base_dir = os.getcwd()
 NUM_FOLDERS = 10
 
 for i in range(1, NUM_FOLDERS +2):
-    folder_name = f"Code{i}_1_parallel_debate_results"
+    folder_name = f"_1_parallel_debate_results"
     folder_path = os.path.join(base_dir, folder_name)
     if i == NUM_FOLDERS + 1:
         JSON_FILE_PATH = "final_elo_scores_aggregated.json"  
