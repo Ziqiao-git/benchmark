@@ -47,7 +47,7 @@ pairs = list(combinations(all_models, 2))
 
 topic="Question that is similar/related to the one in the given instruction, but it should be more interesting and challenging",
 
-MAX_RETRIES = 5      # how many times to retry a failed debate
+
 detailed_instruction_sets = [
 ["Compose an engaging travel blog post about a recent trip to Hawaii, highlighting cultural experiences and must-see attractions.", "Rewrite your previous response. Start every sentence with the letter A."]
 
@@ -88,26 +88,20 @@ async def main(max_concurrent=10):
     async def run_with_sem(pair):
         async with sem:
             a, b = pair
-            attempt = 0
-            while attempt < MAX_RETRIES:
-                attempt += 1
-                print(f"▶️  {a} vs {b}  (attempt {attempt}/{MAX_RETRIES})")
-                try:
-                    res = await run_single_debate(a, b)
-                    print(f"✅  Success {a} vs {b}")
-                    break
-                except Exception as e:
-                    print(f"❌  Attempt {attempt} for {a} vs {b} failed: {e}")
-                    if attempt == MAX_RETRIES:
-                        res = {
-                            "error": str(e),
-                            "traceback": traceback.format_exc(),
-                            "model_a": a,
-                            "model_b": b,
-                            "attempts": attempt,
-                        }
-                        print(f"🛑  Giving up on {a} vs {b}")
-            fname = f"debate_{a}_vs_{b}.json".replace('/', '_')
+            print(f"▶️  {a} vs {b}")
+            try:
+                res = await run_single_debate(a, b)
+                print(f"✅  Finished {a} vs {b}")
+            except Exception as e:
+                print(f"❌  Debate {a} vs {b} failed: {e}")
+                res = {
+                    "error": str(e),
+                    "traceback": traceback.format_exc(),
+                    "model_a": a,
+                    "model_b": b,
+                }
+
+            fname = f"debate_{a}_vs_{b}.json".replace("/", "_")
             with open(os.path.join(RESULTS_DIR, fname), "w", encoding="utf-8") as f:
                 json.dump(res, f, indent=2, ensure_ascii=False)
             return (pair, res)
