@@ -135,28 +135,34 @@ class AsyncDebate_and_Judge:
         Concludes with a final holistic evaluation.
         """
         judge_tasks = []
+        try: 
+            for round_num in range(1, self.rounds + 1):
+                # Run the Q&A for this round (sequentially)
+                round_entries = await self.debate_round(round_num)
+                # Add the new entries to the transcript
+                self.transcript.extend(round_entries)
 
-        for round_num in range(1, self.rounds + 1):
-            # Run the Q&A for this round (sequentially)
-            round_entries = await self.debate_round(round_num)
-            # Add the new entries to the transcript
-            self.transcript.extend(round_entries)
+                # Launch an async judge task for just-finished round
+                t = asyncio.create_task(self.judge_round_async(round_num, round_entries))
+                judge_tasks.append(t)
 
-            # Launch an async judge task for just-finished round
-            t = asyncio.create_task(self.judge_round_async(round_num, round_entries))
-            judge_tasks.append(t)
+            # Wait until all partial round judgments are complete
+            await asyncio.gather(*judge_tasks)
 
-        # Wait until all partial round judgments are complete
-        await asyncio.gather(*judge_tasks)
+            # Perform final/holistic assessment once all rounds are done (we do not do this anymore)
+            # final_result = await self.judge_final_async()
+            # self.results["final_assessment"] = final_result
 
-        # Perform final/holistic assessment once all rounds are done
-        final_result = await self.judge_final_async()
-        self.results["final_assessment"] = final_result
-
-        return {
+            return {
+                "transcript": self.transcript,
+                "round_judgments": self.results["round_judgments"],
+                # "final_assessment": final_result
+            }
+        except Exception as e:
+            return {
             "transcript": self.transcript,
-            "round_judgments": self.results["round_judgments"],
-            "final_assessment": final_result
+            "round_judgments": self.results.get("round_judgments", {}),
+            "error": str(e),
         }
 
     async def debate_round(self, round_num: int) -> List[Dict]:
