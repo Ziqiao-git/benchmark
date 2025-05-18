@@ -1,22 +1,43 @@
 import os
 import json
+import argparse
 
 # --------------------------------------------------------
 # 1. Define models and Elo helpers
 # --------------------------------------------------------
 MODELS = [
-    "openrouter-claude-3.7-sonnet-thinking", 
-    "openrouter-deepseek-v3-0324", 
-    "openrouter-Grok-3-Beta", 
-    "openrouter-Gemini-2.5-flash-thinking", 
-    "openrouter-QwQ-32B", 
-    "openrouter-Qwen3-235B-A22B", 
-    "openrouter-Gemini-2.5-pro",
-    "o1",
-    "o3",
-    "o4-mini",
+    # 1. Deepseek-R1
     "deepseek",
-    "openrouter-Amazon_Nova_1"
+    # 2. O1
+    "o1",
+    # 3. Qwen3-235B
+    "openrouter-Qwen3-235B-A22B",
+    # 4. Claude-3.7
+    "openrouter-claude-3.7-sonnet-thinking",
+    # 5. GPT-4o
+    "gpt4o",
+    # 6. DeepSeek-V3
+    "openrouter-deepseek-v3-0324",
+    # 7. Qwen2.5-72B-Instruct
+    "openrouter-qwen-2-72b-instruct",
+    # 8. llama-3.3-70b-instruct
+    "openrouter-meta-llama-llama-3.3-70b-instruct",
+    # 9. Claude-3.5
+    "openrouter-claude-3.5-haiku",
+    # 10. mistralai/mixtral-8x7b-instruct
+    "openrouter-mistral-8x7b-instruct",
+    # 11. Gemma-2-27B
+    "openrouter-google-gemma-2-27b-it",
+    # 12. qwen/qwen-2-72b-instruct
+    "openrouter-qwen-2-72b-instruct",
+    # 13. Mistral-7b-instructv02
+    "openrouter-mistralai-mistral-7b-instruct-v0.2",
+    # 14. Gemma-2-9B
+    "openrouter-google-gemma-2-9b-it",
+    # 15. microsoft/phi-4-reasoning-plus
+    "openrouter-phi-4-reasoning-plus",
+    #16. QwQ-32B
+    "openrouter-QwQ-32B",
 ]
 
 K_FACTOR = 32
@@ -136,73 +157,97 @@ def write_elo_file(elo_dict, out_path):
 # Main: Do aggregator + standalone
 # --------------------------------------------------------
 def main():
-    base_dir = os.getcwd()
-    NUM_FOLDERS = 10
+    # Add command line argument parsing
+    parser = argparse.ArgumentParser(description="Calculate Elo rankings for debate results")
+    parser.add_argument("--standalone", help="Run only standalone pass for a specific folder", action="store_true")
+    parser.add_argument("--aggregator", help="Run only aggregator pass", action="store_true") 
+    parser.add_argument("--folders", nargs="+", help="List of folder paths to process (default: Math_3R_5J_1 to Math_3R_5J_10)")
+    parser.add_argument("--base-dir", help="Base directory (default: current working directory)")
+    args = parser.parse_args()
 
-    # 1) First, do aggregator pass
-    aggregator_elo = {m: 1200 for m in MODELS}  # start everyone at 1200
-    for i in range(1, NUM_FOLDERS + 1):
-        folder_name = f"Math_3R_5J_{i}"
-        folder_path = os.path.join(base_dir, folder_name)
+    base_dir = args.base_dir or os.getcwd()
+    
+    # Determine which folders to process
+    if args.folders:
+        folders = args.folders
+    else:
+        NUM_FOLDERS = 10
+        folders = [f"Math_3R_5J_{i}" for i in range(1, NUM_FOLDERS + 1)]
+    
+    # Determine which passes to run
+    if args.standalone or args.aggregator:
+        run_aggregator = args.aggregator
+        run_standalone = args.standalone
+    else:
+        # Default: run both if no specific pass is requested
+        run_aggregator = True
+        run_standalone = True
 
-        if not os.path.isdir(folder_path):
-            print(f"[Aggregator] Folder not found: {folder_path}, skipping...")
-            continue
+    # Initialize aggregator Elo if needed
+    if run_aggregator:
+        aggregator_elo = {m: 1200 for m in MODELS}  # start everyone at 1200
+        
+        for folder_name in folders:
+            folder_path = os.path.join(base_dir, folder_name)
 
-        # Load state.json for failed pairs
-        failed_pairs_path = os.path.join(folder_path, "state.json")
-        failed_pairs = []
-        if os.path.isfile(failed_pairs_path):
-            with open(failed_pairs_path, "r", encoding="utf-8") as f:
-                state_data = json.load(f)
-                failed_pairs = state_data.get("failed_pairs", [])
+            if not os.path.isdir(folder_path):
+                print(f"[Aggregator] Folder not found: {folder_path}, skipping...")
+                continue
 
-        # Process each debate JSON in that folder
-        for fname in os.listdir(folder_path):
-            if fname.endswith(".json") and fname.startswith("debate_"):
-                debate_path = os.path.join(folder_path, fname)
-                process_debate_file(debate_path, failed_pairs, aggregator_elo)
+            # Load state.json for failed pairs
+            failed_pairs_path = os.path.join(folder_path, "state.json")
+            failed_pairs = []
+            if os.path.isfile(failed_pairs_path):
+                with open(failed_pairs_path, "r", encoding="utf-8") as f:
+                    state_data = json.load(f)
+                    failed_pairs = state_data.get("failed_pairs", [])
 
-        # After processing folder i, write aggregator results for folder i
-        aggregator_folder_out = os.path.join(folder_path, "folder_elo_scores_aggregated.json")
-        write_elo_file(aggregator_elo, aggregator_folder_out)
+            # Process each debate JSON in that folder
+            for fname in os.listdir(folder_path):
+                if fname.endswith(".json") and fname.startswith("debate_"):
+                    debate_path = os.path.join(folder_path, fname)
+                    process_debate_file(debate_path, failed_pairs, aggregator_elo)
 
-    # After folder 10, write final aggregator result
-    aggregator_final_out = os.path.join(base_dir, "final_elo_scores_aggregated.json")
-    write_elo_file(aggregator_elo, aggregator_final_out)
-    print("[Aggregator] Done.\n")
+            # After processing folder, write aggregator results for folder
+            aggregator_folder_out = os.path.join(folder_path, "folder_elo_scores_aggregated.json")
+            write_elo_file(aggregator_elo, aggregator_folder_out)
 
-    # 2) Next, do standalone pass
-    for i in range(1, NUM_FOLDERS + 1):
-        folder_name = f"Math_3R_5J_{i}"
-        folder_path = os.path.join(base_dir, folder_name)
+        # After all folders, write final aggregator result
+        aggregator_final_out = os.path.join(base_dir, "final_elo_scores_aggregated.json")
+        write_elo_file(aggregator_elo, aggregator_final_out)
+        print("[Aggregator] Done.\n")
 
-        if not os.path.isdir(folder_path):
-            print(f"[Standalone] Folder not found: {folder_path}, skipping...")
-            continue
+    # Standalone pass
+    if run_standalone:
+        for folder_name in folders:
+            folder_path = os.path.join(base_dir, folder_name)
 
-        # Reset fresh Elo for each folder
-        standalone_elo = {m: 1200 for m in MODELS}
+            if not os.path.isdir(folder_path):
+                print(f"[Standalone] Folder not found: {folder_path}, skipping...")
+                continue
 
-        # Load state.json for failed pairs
-        failed_pairs_path = os.path.join(folder_path, "state.json")
-        failed_pairs = []
-        if os.path.isfile(failed_pairs_path):
-            with open(failed_pairs_path, "r", encoding="utf-8") as f:
-                state_data = json.load(f)
-                failed_pairs = state_data.get("failed_pairs", [])
+            # Reset fresh Elo for each folder
+            standalone_elo = {m: 1200 for m in MODELS}
 
-        # Process each debate JSON *just* for that folder
-        for fname in os.listdir(folder_path):
-            if fname.endswith(".json") and fname.startswith("debate_"):
-                debate_path = os.path.join(folder_path, fname)
-                process_debate_file(debate_path, failed_pairs, standalone_elo)
+            # Load state.json for failed pairs
+            failed_pairs_path = os.path.join(folder_path, "state.json")
+            failed_pairs = []
+            if os.path.isfile(failed_pairs_path):
+                with open(failed_pairs_path, "r", encoding="utf-8") as f:
+                    state_data = json.load(f)
+                    failed_pairs = state_data.get("failed_pairs", [])
 
-        # Write out the standalone result for folder i
-        standalone_out = os.path.join(folder_path, "folder_elo_scores_standalone.json")
-        write_elo_file(standalone_elo, standalone_out)
+            # Process each debate JSON *just* for that folder
+            for fname in os.listdir(folder_path):
+                if fname.endswith(".json") and fname.startswith("debate_"):
+                    debate_path = os.path.join(folder_path, fname)
+                    process_debate_file(debate_path, failed_pairs, standalone_elo)
 
-    print("[Standalone] Done.")
+            # Write out the standalone result for folder
+            standalone_out = os.path.join(folder_path, "folder_elo_scores_standalone.json")
+            write_elo_file(standalone_elo, standalone_out)
+
+        print("[Standalone] Done.")
 
 if __name__ == "__main__":
     main()

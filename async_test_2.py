@@ -121,7 +121,7 @@ if __name__ == "__main__":
         tqdm(detailed_instruction_sets, desc="Instruction sets", unit="set"), 1
     ):
         instruction_set = [topic, detailed_instructions]
-        RESULTS_DIR = f"JOB_CS_{idx}_9R_16J_parallel_debate_results"
+        RESULTS_DIR = f"JOB_CS_{idx}_9R_16J_parallel_debate_results_2"
         os.makedirs(RESULTS_DIR, exist_ok=True)
 
         # Fresh random judges for this batch
