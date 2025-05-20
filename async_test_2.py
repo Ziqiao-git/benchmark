@@ -49,7 +49,7 @@ topic="Questioner is a client of the responder, who propose a real life very cha
 
 
 detailed_instruction_sets = [
-["Computer and Information Systems Managers Plan, direct, or coordinate activities in such fields as electronic data processing, information systems, systems analysis, and computer programming."]
+["Assess, diagnose, and treat mental and emotional disorders of individuals through observation, interview, and psychological tests. Help individuals with distress or maladjustment understand their problems through their knowledge of case history, interviews with patients, and theory. Provide individual or group counseling services to assist individuals in achieving more effective personal, social, educational, and vocational development and adjustment. May design behavior modification programs and consult with medical personnel regarding the best treatment for patients."]
 
 ]
 
@@ -121,7 +121,7 @@ if __name__ == "__main__":
         tqdm(detailed_instruction_sets, desc="Instruction sets", unit="set"), 1
     ):
         instruction_set = [topic, detailed_instructions]
-        RESULTS_DIR = f"JOB_CS_{idx}_9R_16J_parallel_debate_results_2"
+        RESULTS_DIR = f"JOB_PSYCH_{idx}_9R_16J_parallel_debate_results_1"
         os.makedirs(RESULTS_DIR, exist_ok=True)
 
         # Fresh random judges for this batch

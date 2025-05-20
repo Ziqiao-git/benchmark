@@ -80,7 +80,8 @@ class AsyncDebate_and_Judge:
             "Answer accuracy: correct and complete",
             "Logic: uses sound reasoning",
             "Empathy: demonstrates understanding of the question context",
-            "Explanation: clarity and detail"
+            "Explanation: clarity and detail, verbose might affect the clarity",
+            "Answer length: longer answer does not necessarily mean better answer, sometimes participants can be too verbose but not provide any insights or solutions. Please judge based on the quality of the answer and the insights provided."
         ]
         self.question_criteria = question_criteria or [
             "Realistic, on-topic scenario?",
