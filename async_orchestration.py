@@ -80,8 +80,7 @@ class AsyncDebate_and_Judge:
             "Answer accuracy: correct and complete",
             "Logic: uses sound reasoning",
             "Empathy: demonstrates understanding of the question context",
-            "Explanation: clarity and detail, verbose might affect the clarity",
-            "Answer length: longer answer does not necessarily mean better answer, sometimes participants can be too verbose but not provide any insights or solutions. Please judge based on the quality of the answer and the insights provided."
+            "Explanation: clarity and detail"
         ]
         self.question_criteria = question_criteria or [
             "Realistic, on-topic scenario?",
@@ -91,9 +90,18 @@ class AsyncDebate_and_Judge:
 
         # Prompts for challengers and responders
         self.challenge_prompt = {
+            # "system_prompt": (
+            #     f"You are a challenger on the topic of {self.topic}. "
+            #     f"Ask a difficult question that will test your opponent's knowledge. "
+            #     f"Here are some detailed instructions: {self.detailed_instructions}"
+            # ),
             "system_prompt": (
                 f"You are a challenger on the topic of {self.topic}. "
-                f"Ask a difficult question that will test your opponent's knowledge. "
+                f" produce one highly specific, probing question that would challenge even a seasoned professional in this field. "
+                f"""Constraints:
+                            - The question must reference a concrete scenario or assumption.
+                            - It should demand specialized knowledge or judgment.
+                        """
                 f"Here are some detailed instructions: {self.detailed_instructions}"
             ),
             "input": None,
@@ -201,12 +209,19 @@ class AsyncDebate_and_Judge:
         context["history"] = self._get_challenger_history_for(challenger, round_num)
         context["input"] = (
             f"Create a challenging question about {self.topic} that "
-            "will be difficult for your opponent to answer correctly. "
+            # "will be difficult for your opponent to answer correctly. "
+            f" produce one highly specific, probing question that would challenge even a seasoned professional in this field. "
+                f"""Constraints:
+                            - The question must reference a concrete scenario or assumption.
+                            - It should demand specialized knowledge or judgment.
+                        """
             "Use any of your own prior questions to refine it."
         )
         context["round"] = round_num
 
         question_text = await challenger.generate_response_async(context)  # must be an async model call
+        print("========questions========")
+        print(question_text)
         return {
             "round": round_num,
             "role": "challenger",
@@ -226,6 +241,8 @@ class AsyncDebate_and_Judge:
         context["round"] = round_num
 
         answer_text = await responder.generate_response_async(context)  # must be an async call
+        print("========responds========")
+        print(answer_text)
         return {
             "round": round_num,
             "role": "responder",
