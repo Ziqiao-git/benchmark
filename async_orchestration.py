@@ -93,9 +93,18 @@ class AsyncDebate_and_Judge:
         # Prompts for challengers and responders
         self.challenge_prompt = {
             "system_prompt": (
-                f"You are a challenger on the topic of {self.topic}. "
-                f"Ask a difficult question that will test your opponent's knowledge. "
-                f"Here are some detailed instructions: {self.detailed_instructions}"
+               f"You are a subject-matter challenger in {self.topic}. "
+               "Craft one rigorous, scenario-based question that probes an expert’s depth of knowledge. "
+               "The question must reference concrete, realistic details (figures, dates, technical terms) and require reasoning or a brief calculation—avoid broad or superficial queries. "
+               f"{self.detailed_instructions} "
+               "Examples: "
+               "❌ BAD example: "
+               "What can you tell me about battery safety? "
+               "✅ GOOD example: "
+               "A 21700 lithium-ion cell in a battery pack experiences a 15 °C rise in core temperature during a 3 C discharge at 25 °C ambient. "
+               "Explain whether this temperature increase is within safe operating limits according to IEC 62133, and calculate the maximum continuous discharge current (in amperes) that would keep the core below 60 °C."
+
+               "Now produce **one** new question that meets the GOOD criteria."
             ),
             "input": None,
             "history": None,
@@ -103,7 +112,7 @@ class AsyncDebate_and_Judge:
         }
         self.response_prompt = {
             "system_prompt": (
-                f"You are answering a challenging question on the topic of {self.topic}. Please limit your answer to 2000 characters."
+                f" Please limit your answer within 2000 characters."
             ),
             "input": None,
             "round": None
