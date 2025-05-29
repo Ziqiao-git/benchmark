@@ -7,6 +7,7 @@ from langchain.output_parsers import PydanticOutputParser
 from langchain.prompts import PromptTemplate
 import asyncio
 import random
+import functools
 from json.decoder import JSONDecodeError
 
 
@@ -48,66 +49,85 @@ class ModelParticipant(ParticipantInterface):
         
         return response
     
-    async def generate_response_async(self, context: dict, max_retry: int = 3) -> str:
+    async def generate_response_async(self, context: dict, max_retry: int = 3,
+                                    max_tokens: int = 512, max_chars: int = 2000) -> str:
         """
         Async with internal retry/back-off AND automatic history-trimming
         when the provider complains about context length.
-        """
-        import random, asyncio
-        from json.decoder import JSONDecodeError
 
-        ctx        = dict(context)               # make a mutable copy
-        full_hist  = list(ctx.get("history") or [])
+        Now also supports:
+        - A 'max_tokens' argument for the model, but falls back if not supported.
+        - A final post-processing step that truncates the string to 'max_chars'.
+        """
+        ctx = dict(context)  # make a mutable copy
+        full_hist = list(ctx.get("history") or [])
         base_delay = 1.5
 
         for attempt in range(1, max_retry + 1):
-            ctx["history"] = full_hist           # current slice
+            ctx["history"] = full_hist  # current slice
             messages = self._format_messages(ctx)
 
             try:
-                # ---- model call ------------------------------------------------
+                # ---- model call ----------------------------------------
                 if (
                     hasattr(self.model, "agenerate_messages")
                     and asyncio.iscoroutinefunction(self.model.agenerate_messages)
                 ):
-                    response = await self.model.agenerate_messages(messages)
+                    # Try calling the async method with max_tokens
+                    try:
+                        response = await self.model.agenerate_messages(messages, max_tokens=max_tokens)
+                    except TypeError:
+                        # The model does not accept max_tokens
+                        response = await self.model.agenerate_messages(messages)
+
                 else:
+                    # Otherwise, run the sync method in a thread:
                     loop = asyncio.get_running_loop()
-                    response = await loop.run_in_executor(
-                        None, self.model.generate_messages, messages
-                    )
+                    try:
+                        # Attempt to pass max_tokens
+                        func = functools.partial(self.model.generate_messages, messages, max_tokens=max_tokens)
+                        response = await loop.run_in_executor(None, func)
+                    except TypeError:
+                        # Fallback: model doesn't accept max_tokens
+                        response = await loop.run_in_executor(None, self.model.generate_messages, messages)
+
+                # ---- post-processing / truncation -----------------------
+                # Just in case the model ignores max_tokens, chop the output to max_chars.
+                if isinstance(response, str) and len(response) > max_chars:
+                    response = response[:max_chars] + "...(truncated)"
 
                 # success
                 self.history.append({"context": ctx, "response": response})
                 return response
 
-            # -------- handle known transient errors ----------------------------
+            # -------- handle known transient errors ----------------------
             except (JSONDecodeError, ValueError) as e:
-                err      = f"JSON decode error: {e}"
+                err = f"JSON decode error: {e}"
                 retry_ok = True
 
             except Exception as e:
                 err_txt = str(e)
                 # token-limit / context-length complaint
                 if "maximum context length" in err_txt or "max_tokens" in err_txt:
-                    if full_hist:                       # we still have something to trim
+                    if full_hist:  # still have something to trim
                         drop = max(1, len(full_hist) // 2)
-                        full_hist = full_hist[drop:]    # keep only the newest part
+                        full_hist = full_hist[drop:]  # keep only newest
                         print(f"⚠️  {self.model_id}: context too long → dropped {drop} history msgs; retrying")
-                        continue                        # do NOT count as a retry
-                err      = f"{type(e).__name__}: {e}"
+                        continue  # do NOT count as a retry
+                err = f"{type(e).__name__}: {e}"
                 retry_ok = True
 
-            # -------- give up or back-off --------------------------------------
+            # -------- give up or back-off --------------------------------
             if attempt == max_retry or not retry_ok:
                 msg = f"{self.model_id}: {err} — giving up after {attempt} tries"
                 print(f"🛑  {msg}")
                 raise RuntimeError(msg)
 
-            delay = base_delay * 2 ** (attempt - 1) * (0.8 + 0.4 * random.random())
+            delay = base_delay * (2 ** (attempt - 1)) * (0.8 + 0.4 * random.random())
             print(f"⏳  {self.model_id}: retrying in {delay:.1f}s ({attempt}/{max_retry})")
             await asyncio.sleep(delay)
     
+
     def _format_messages(self, context: dict) -> List[tuple[str, str]]:
         """Format context into messages for the model."""
         messages = []

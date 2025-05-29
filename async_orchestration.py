@@ -12,6 +12,7 @@ class JudgmentCriteria(BaseModel):
     and 'better_question' (A/B) for the better question.
     """
     winner: Literal["A", "B"] = Field(..., description="Which model performed better in answering the rival's question under response criteria (A or B)")
+    reason: str = Field(..., description="Reason for the winner")
     better_question: Literal["A", "B"] = Field(..., description="Which model asked the better question under question criteria (A or B)")
 
 class FinalAssessment(BaseModel):
@@ -77,11 +78,11 @@ class AsyncDebate_and_Judge:
 
         # Default criteria
         self.response_criteria = response_criteria or [
-            "Answer accuracy: correct and complete",
+            "Answer accuracy: correct and complete. Is the model giving out a solution or just repeating some impratical fancy words.",
             "Logic: uses sound reasoning",
             "Empathy: demonstrates understanding of the question context",
             "Explanation: clarity and detail, verbose might affect the clarity",
-            "Answer length: longer answer does not necessarily mean better answer, sometimes participants can be too verbose but not provide any insights or solutions. Please judge based on the quality of the answer and the insights provided."
+            "Answer length: Answer should be 2000 characters or less, if most of the answer is repeating the same information, it is not a good answer."
         ]
         self.question_criteria = question_criteria or [
             "Realistic, on-topic scenario?",
@@ -102,7 +103,7 @@ class AsyncDebate_and_Judge:
         }
         self.response_prompt = {
             "system_prompt": (
-                f"You are answering a challenging question on the topic of {self.topic}."
+                f"You are answering a challenging question on the topic of {self.topic}. Please limit your answer to 2000 characters."
             ),
             "input": None,
             "round": None
@@ -149,10 +150,6 @@ class AsyncDebate_and_Judge:
 
             # Wait until all partial round judgments are complete
             await asyncio.gather(*judge_tasks)
-
-            # Perform final/holistic assessment once all rounds are done (we do not do this anymore)
-            # final_result = await self.judge_final_async()
-            # self.results["final_assessment"] = final_result
 
             return {
                 "transcript": self.transcript,
