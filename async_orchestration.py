@@ -66,7 +66,7 @@ class AsyncDebate_and_Judge:
 
         # instruction_set should have at least [topic, detailed_instructions]
         if not instruction_set or len(instruction_set) < 2:
-            instruction_set = [topic, "Be creative and thorough."]
+            instruction_set = ["General Knowledge", "Be creative and thorough."]
         self.topic = instruction_set[0]
         self.detailed_instructions = instruction_set[1]
 
@@ -76,43 +76,90 @@ class AsyncDebate_and_Judge:
             if not isinstance(j, ModelParticipant):
                 raise ValueError("All judges must be ModelParticipant instances")
 
-        # Default criteria
+        # Enhanced response criteria that prioritize reasoning over brevity
         self.response_criteria = response_criteria or [
-            "Answer accuracy: correct and complete. Is the model giving out a solution or just repeating some impratical fancy words.",
-            "Logic: uses sound reasoning",
-            "Empathy: demonstrates understanding of the question context",
-            "Explanation: clarity and detail, verbose might affect the clarity",
-            "Answer length: Answer should be 2000 characters or less, if most of the answer is repeating the same information, it is not a good answer."
-        ]
-        self.question_criteria = question_criteria or [
-            "Realistic, on-topic scenario?",
-            "Not overly trivial or tangential?",
-            "Probes a known gap or requires domain knowledge?"
+            "REASONING DEPTH: Does the response demonstrate sophisticated analytical thinking, step-by-step logic, and consideration of multiple factors? Higher-quality reasoning should be valued over simple brevity.",
+            "TECHNICAL ACCURACY: Are the facts, calculations, numbers, and domain-specific details correct? Precise technical knowledge indicates superior capability.",
+            "PROBLEM-SOLVING APPROACH: Does the response break down complex problems systematically? Look for structured thinking, identification of key variables, and logical progression.",
+            "DOMAIN EXPERTISE: Does the response demonstrate deep subject-matter knowledge that goes beyond surface-level understanding? Expert-level insights should be rewarded.",
+            "PRACTICAL APPLICABILITY: Can the solution actually be implemented? Does it account for real-world constraints and trade-offs?",
+            "COMPLETENESS vs CONCISENESS: While responses should be focused, thoroughness in addressing all aspects of a complex question is more valuable than artificial brevity. Judge based on information density, not word count."
         ]
 
-        # Prompts for challengers and responders
+        # Enhanced question criteria
+        self.question_criteria = question_criteria or [
+            "CONCRETE SPECIFICITY: Does the question include specific numbers, dates, technical terms, standards, or real-world entities?",
+            "MULTI-LAYERED COMPLEXITY: Does it require 2-3 steps of reasoning or calculations rather than simple recall?",
+            "DOMAIN EXPERTISE TESTING: Does it probe knowledge that only someone with genuine expertise would possess?",
+            "PRACTICAL SCENARIO: Does it present a realistic situation someone might actually encounter in the field?",
+            "PRECISION REQUIREMENTS: Does it ask for specific values, percentages, procedures, or detailed explanations rather than vague responses?"
+        ]
+
+        # Enhanced challenge prompt
         self.challenge_prompt = {
             "system_prompt": (
-               f"You are a subject-matter challenger in {self.topic}. "
-               "Craft one rigorous, scenario-based question that probes an expert’s depth of knowledge. "
-               "The question must reference concrete, realistic details (figures, dates, technical terms) and require reasoning or a brief calculation—avoid broad or superficial queries. "
-               f"{self.detailed_instructions} "
-               "Examples: "
-               "❌ BAD example: "
-               "What can you tell me about battery safety? "
-               "✅ GOOD example: "
-               "A 21700 lithium-ion cell in a battery pack experiences a 15 °C rise in core temperature during a 3 C discharge at 25 °C ambient. "
-               "Explain whether this temperature increase is within safe operating limits according to IEC 62133, and calculate the maximum continuous discharge current (in amperes) that would keep the core below 60 °C."
-
-               "Now produce **one** new question that meets the GOOD criteria."
+                f"You are an expert challenger in {self.topic}. Your goal is to craft ONE rigorous, scenario-based question "
+                "that will test your opponent's deep understanding and expose potential knowledge gaps.\n\n"
+                
+                "QUESTION REQUIREMENTS:\n"
+                "1. CONCRETE SPECIFICITY: Include specific numbers, dates, technical terms, standards, or real-world entities\n"
+                "2. MULTI-LAYERED COMPLEXITY: Require 2-3 steps of reasoning or calculations\n"
+                "3. DOMAIN EXPERTISE: Test knowledge that only someone with genuine expertise would know\n"
+                "4. PRACTICAL APPLICATION: Present a realistic scenario someone might actually encounter\n"
+                "5. PRECISION TESTING: Ask for specific values, percentages, or exact procedures\n\n"
+                
+                "QUESTION STRUCTURE TEMPLATE:\n"
+                "- Context: Set up a specific, realistic scenario with concrete details\n"
+                "- Challenge: Present a problem requiring domain knowledge and reasoning\n"
+                "- Specificity: Ask for precise calculations, recommendations, or explanations\n"
+                "- Verification: Include elements that allow checking the accuracy of the response\n\n"
+                
+                f"TOPIC-SPECIFIC GUIDANCE FOR {self.topic}:\n"
+                f"{self.detailed_instructions}\n\n"
+                
+                "EXAMPLES OF QUESTION QUALITY:\n\n"
+                "❌ POOR (too vague/broad):\n"
+                "- 'What can you tell me about battery safety?'\n"
+                "- 'How do you handle network security?'\n"
+                "- 'What's important in project management?'\n\n"
+                
+                "✅ EXCELLENT (specific, challenging, testable):\n"
+                "- 'A 21700 lithium-ion cell in a battery pack experiences a 15°C rise in core temperature during a 3C discharge at 25°C ambient. "
+                "Given IEC 62133 safety standards, calculate the maximum continuous discharge current (in amperes) that would keep the core below 60°C, "
+                "and explain which thermal management strategy would be most effective for this configuration.'\n\n"
+                
+                "- 'Your company's API gateway is receiving 50,000 requests/second with 99.5% hitting cached endpoints. "
+                "A DDoS attack increases traffic to 200,000 req/s, with 80% now targeting uncached endpoints. "
+                "Calculate the backend load increase factor and recommend specific rate limiting parameters (requests/minute per IP) "
+                "to maintain service availability while allowing legitimate traffic.'\n\n"
+                
+                "STRATEGIC CONSIDERATIONS:\n"
+                "- Look for edge cases and boundary conditions in your topic area\n"
+                "- Target areas where superficial knowledge fails but deep understanding succeeds\n"
+                "- Include industry standards, regulations, or best practices that experts should know\n"
+                "- Ask for trade-off analysis between competing approaches\n"
+                "- Require application of theoretical knowledge to practical constraints\n\n"
+                
+                "QUESTION VALIDATION CHECKLIST:\n"
+                "□ Does it include specific, verifiable details (numbers, standards, etc.)?\n"
+                "□ Would a domain expert need 2-3 minutes of thinking to answer well?\n"
+                "□ Can the answer quality be objectively evaluated?\n"
+                "□ Does it test practical application, not just memorization?\n"
+                "□ Would someone with only surface knowledge struggle?\n\n"
+                
+                "Now create ONE exceptional question that meets all these criteria and would genuinely challenge an expert in this field."
             ),
             "input": None,
             "history": None,
             "round": None
         }
+
+        # Enhanced response prompt
         self.response_prompt = {
             "system_prompt": (
-                f" Please limit your answer within 2000 characters."
+                f"You are an expert in {self.topic}. Provide a comprehensive, technically accurate response that demonstrates your expertise. "
+                "Show your reasoning step-by-step, include specific calculations where needed, and provide practical insights. "
+                "Focus on accuracy and depth rather than brevity. Your response should prove your mastery of the subject matter."
             ),
             "input": None,
             "round": None
@@ -121,16 +168,72 @@ class AsyncDebate_and_Judge:
         # We will need a parser and prompt template for partial round judgments
         self.parser = PydanticOutputParser(pydantic_object=JudgmentCriteria)
 
+        # Enhanced judging prompt template
         self.prompt_template = PromptTemplate(
             template=(
-                "You are a fair and impartial judge evaluating a knowledge battle between two AI models "
-                "on the topic of {topic}, which is {detailed_instructions}.\n\n"
-                "Judge this single round based on the following response criteria: {response_criteria}.\n\n"
-                "Here is the relevant round transcript:\n{transcript}\n\n"
-                "{format_instructions}\n"
-                "Remember, your evaluation must follow the JSON schema strictly."
+                "You are evaluating a knowledge battle between two AI models on {topic}.\n\n"
+                
+                "CRITICAL JUDGING INSTRUCTIONS:\n"
+                "Your goal is to identify which model demonstrates SUPERIOR REASONING CAPABILITIES, not which gives the shortest answer.\n"
+                "Large, advanced models often provide more detailed, nuanced responses that demonstrate deeper understanding.\n"
+                "Do not penalize a response for being thorough if that thoroughness adds value.\n\n"
+                
+                "EVALUATION FRAMEWORK:\n"
+                "1. REASONING QUALITY (40% weight):\n"
+                "   - Does the model show step-by-step logical thinking?\n"
+                "   - Are complex problems broken down systematically?\n"
+                "   - Does it consider multiple perspectives or factors?\n"
+                "   - Is the analytical approach sophisticated?\n\n"
+                
+                "2. TECHNICAL PRECISION (30% weight):\n"
+                "   - Are calculations and technical details accurate?\n"
+                "   - Does it demonstrate genuine domain expertise?\n"
+                "   - Are specific standards, protocols, or methodologies correctly referenced?\n\n"
+                
+                "3. PROBLEM-SOLVING APPROACH (20% weight):\n"
+                "   - Is the solution methodology sound?\n"
+                "   - Does it address the core challenge effectively?\n"
+                "   - Are edge cases and constraints considered?\n\n"
+                
+                "4. COMMUNICATION EFFECTIVENESS (10% weight):\n"
+                "   - Is the explanation clear and well-structured?\n"
+                "   - Does it provide actionable insights?\n"
+                "   - Note: A longer response that is well-organized and informative should score higher than a brief but incomplete one\n\n"
+                
+                "WHAT TO REWARD:\n"
+                "✅ Detailed calculations with step-by-step work\n"
+                "✅ Multiple solution approaches compared\n"
+                "✅ Consideration of trade-offs and limitations\n"
+                "✅ References to specific standards or best practices\n"
+                "✅ Nuanced understanding of complex relationships\n"
+                "✅ Practical implementation details\n\n"
+                
+                "WHAT TO PENALIZE:\n"
+                "❌ Factual errors or miscalculations\n"
+                "❌ Oversimplified responses that miss key complexity\n"
+                "❌ Generic advice without specific application\n"
+                "❌ Failure to address the core technical challenge\n"
+                "❌ Circular reasoning or logical fallacies\n"
+                "❌ Responses that avoid the difficult parts of the question\n\n"
+                
+                "RESPONSE EVALUATION CRITERIA:\n"
+                "{response_criteria}\n\n"
+                
+                "ROUND TRANSCRIPT TO EVALUATE:\n"
+                "{transcript}\n\n"
+                
+                "EVALUATION INSTRUCTIONS:\n"
+                "1. Read both responses completely\n"
+                "2. Identify which demonstrates superior reasoning capabilities\n"
+                "3. Look for evidence of deeper understanding and analytical thinking\n"
+                "4. Consider: If you had to trust one model with a real-world version of this problem, which would you choose?\n"
+                "5. Remember: Advanced models are expected to provide more sophisticated analysis\n\n"
+                
+                "{format_instructions}\n\n"
+                
+                "Be rigorous and objective. Favor the response that shows better reasoning, even if it's longer."
             ),
-            input_variables=["topic", "detailed_instructions", "response_criteria", "transcript"],
+            input_variables=["topic", "response_criteria", "transcript"],
             partial_variables={"format_instructions": self.parser.get_format_instructions()}
         )
 
@@ -208,7 +311,8 @@ class AsyncDebate_and_Judge:
         context["input"] = (
             f"Create a challenging question about {self.topic} that "
             "will be difficult for your opponent to answer correctly. "
-            "Use any of your own prior questions to refine it."
+            "Use any of your own prior questions to refine it and avoid repetition. "
+            "Make this question more sophisticated and targeted than your previous ones."
         )
         context["round"] = round_num
 
@@ -242,7 +346,7 @@ class AsyncDebate_and_Judge:
     def _get_challenger_history_for(self, participant: ModelParticipant, up_to_round: int) -> List[Dict]:
         """
         Return all lines where this participant was 'challenger' in previous rounds.
-        i.e., A does not see B’s lines, nor does it see its own answers from prior rounds.
+        i.e., A does not see B's lines, nor does it see its own answers from prior rounds.
         """
         return [
             e for e in self.transcript
@@ -258,7 +362,7 @@ class AsyncDebate_and_Judge:
     #
     async def judge_round_async(self, round_num: int, round_entries: List[Dict]) -> Dict[str, Any]:
         """
-        Asynchronously calls each judge on the *just finished* round’s transcript.
+        Asynchronously calls each judge on the *just finished* round's transcript.
         Collates the votes for 'winner' and 'better_question' into self.results.
         """
         round_judgments = {}
@@ -274,14 +378,15 @@ class AsyncDebate_and_Judge:
             # Build the prompt
             prompt = self.prompt_template.format(
                 topic=self.topic,
-                detailed_instructions=self.detailed_instructions,
-                response_criteria=", ".join(self.response_criteria),
+                response_criteria="\n".join([f"- {criterion}" for criterion in self.response_criteria]),
                 transcript=round_text
             )
 
             judge_context = {
                 "system_prompt": (
-                    "You are a fair and impartial judge. Provide your evaluation in the exact JSON format."
+                    "You are an expert judge evaluating AI model capabilities. Your goal is to identify superior reasoning and expertise, "
+                    "not to prefer shorter responses. Advanced models often provide more sophisticated, detailed analysis that should be rewarded. "
+                    "Focus on technical accuracy, logical depth, and problem-solving capability. Provide evaluation in exact JSON format."
                 ),
                 "input": prompt
             }
@@ -351,7 +456,7 @@ class AsyncDebate_and_Judge:
         Once all rounds are complete, each judge does a holistic final assessment
         of the entire debate (all rounds).
         """
-        # Summaries for the “battle” and question usage
+        # Summaries for the "battle" and question usage
         battle_summary = {
             "model_a_wins": 0,
             "model_b_wins": 0,
@@ -383,16 +488,55 @@ class AsyncDebate_and_Judge:
         final_parser = PydanticOutputParser(pydantic_object=FinalAssessment)
         final_prompt_template = PromptTemplate(
             template=(
-                "You are evaluating the entire knowledge battle between two AI models "
-                "on the topic of {topic}, which is {detailed_instructions}.\n\n"
-                "Here is a summary of round results:\n{round_summary}\n\n"
-                "Complete battle transcript:\n{full_transcript}\n\n"
-                "Provide a final assessment: which model performed better overall, and which model "
-                "better utilized the conversation history to create targeted challenging questions?\n\n"
+                "You are conducting a FINAL EVALUATION of an entire knowledge battle between two AI models on {topic}.\n\n"
+                
+                "Your task is to determine which model consistently demonstrated SUPERIOR REASONING AND EXPERTISE throughout the debate.\n\n"
+                
+                "HOLISTIC EVALUATION CRITERIA:\n"
+                
+                "1. REASONING CONSISTENCY (35%):\n"
+                "   - Which model showed more sophisticated analytical thinking across rounds?\n"
+                "   - Who demonstrated better problem-solving methodologies?\n"
+                "   - Which responses showed deeper logical reasoning?\n\n"
+                
+                "2. TECHNICAL MASTERY (30%):\n"
+                "   - Which model provided more accurate technical details?\n"
+                "   - Who showed deeper domain expertise?\n"
+                "   - Which model better handled complex calculations and specifications?\n\n"
+                
+                "3. STRATEGIC QUESTIONING (20%):\n"
+                "   - Which model created more challenging, expert-level questions?\n"
+                "   - Who better used conversation history to probe weaknesses?\n"
+                "   - Which questions required more sophisticated knowledge to answer?\n\n"
+                
+                "4. ADAPTIVE INTELLIGENCE (15%):\n"
+                "   - Which model showed better understanding of context and nuance?\n"
+                "   - Who provided more comprehensive solutions?\n"
+                "   - Which model better handled unexpected or complex scenarios?\n\n"
+                
+                "IMPORTANT CONSIDERATIONS:\n"
+                "- Large models are expected to provide more detailed, nuanced responses\n"
+                "- Favor depth of reasoning over brevity\n"
+                "- Consider which model you would trust with real-world applications\n"
+                "- Look for evidence of genuine understanding vs. pattern matching\n\n"
+                
+                "ROUND SUMMARY:\n"
+                "{round_summary}\n\n"
+                
+                "COMPLETE BATTLE TRANSCRIPT:\n"
+                "{full_transcript}\n\n"
+                
+                "ANALYSIS QUESTIONS:\n"
+                "1. Which model consistently provided more sophisticated reasoning?\n"
+                "2. Which model's technical knowledge appeared more comprehensive?\n"
+                "3. Which model created more challenging and insightful questions?\n"
+                "4. If you had to choose one model for real-world expert consultation, which would it be?\n\n"
+                
                 "{format_instructions}\n\n"
-                "Be thorough and fair. Pay attention to usage of context from previous rounds."
+                
+                "Provide your assessment based on overall reasoning capability and expertise demonstration."
             ),
-            input_variables=["topic", "detailed_instructions", "round_summary", "full_transcript"],
+            input_variables=["topic", "round_summary", "full_transcript"],
             partial_variables={"format_instructions": final_parser.get_format_instructions()}
         )
 
@@ -432,14 +576,15 @@ class AsyncDebate_and_Judge:
         for judge in self.judges:
             prompt = final_prompt_template.format(
                 topic=self.topic,
-                detailed_instructions=self.detailed_instructions,
                 round_summary=round_summary_text,
                 full_transcript=full_transcript_text
             )
 
             judge_context = {
                 "system_prompt": (
-                    "You are a fair and impartial judge evaluating overall performance. "
+                    "You are an expert judge conducting final evaluation of AI reasoning capabilities. "
+                    "Your goal is to identify which model demonstrated superior analytical thinking, technical expertise, "
+                    "and problem-solving ability throughout the entire debate. Reward depth of reasoning over brevity. "
                     "Output must follow the specified JSON schema exactly."
                 ),
                 "input": prompt
