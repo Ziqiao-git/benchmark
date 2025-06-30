@@ -64,6 +64,7 @@ async def run_single_debate(model_a_id, model_b_id, rounds=9):
         judges_list=judges,
         instruction_set=instruction_set,
         rounds=rounds,
+        results_dir=RESULTS_DIR,
     )
     return await adj.run_debate()   # returns dict with transcript + scores
 async def main(max_concurrent=10):
@@ -121,7 +122,7 @@ if __name__ == "__main__":
         tqdm(detailed_instruction_sets, desc="Instruction sets", unit="set"), 1
     ):
         instruction_set = [topic, detailed_instructions]
-        RESULTS_DIR = f"test_results_7"
+        RESULTS_DIR = f"test_results_12"
         os.makedirs(RESULTS_DIR, exist_ok=True)
 
         # Fresh random judges for this batch

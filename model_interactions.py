@@ -180,19 +180,45 @@ class Debate:
 
     def _get_history_for(self, participant: ModelParticipant, round_num: int) -> List[Dict]:
         """
-        Retrieve the conversation history for this participant, showing
-        *only the messages that participant has produced* in all rounds
-        up to (and including) 'round_num'.
-
-        This means the participant never sees the other model’s questions
-        (nor the other model’s answers) in 'history'. They only see
-        what they themselves wrote in previous steps.
+        Retrieve the conversation history for this participant, showing:
+        * The questions that participant has asked in all rounds up to (and including) 'round_num'
+        * The opponent's answers to this participant's questions (to allow strategic adaptation)
+        
+        This means the participant sees:
+        - Their own questions
+        - Opponent's answers to their own questions
+        - BUT NOT: Their own answers to any questions, or opponent's questions
         """
         filtered_history = []
         for entry in self.transcript:
-            if entry["round"] <= round_num and entry["participant"] == participant.model_id:
-                filtered_history.append(entry)
+            if entry["round"] <= round_num:
+                # Include participant's own questions only
+                if entry["participant"] == participant.model_id and entry["role"] == "challenger":
+                    filtered_history.append(entry)
+                # Include opponent's answers to this participant's questions
+                elif (entry["participant"] != participant.model_id and 
+                      entry["role"] == "responder" and
+                      self._is_answering_participants_question(entry, participant.model_id)):
+                    filtered_history.append(entry)
         return filtered_history
+    
+    def _is_answering_participants_question(self, answer_entry: Dict, participant_id: str) -> bool:
+        """
+        Check if this answer is responding to a question asked by the specified participant.
+        Using step information to accurately match questions and answers.
+        """
+        # Get the participant IDs from the participants list
+        participant_a_id = self.participants[0].model_id
+        participant_b_id = self.participants[1].model_id
+        
+        # For step 3: Model B answers Model A's question (step 1)
+        # We want to know if this answer is responding to participant_id's question
+        if answer_entry["step"] == 3 and participant_id == participant_a_id:
+            return True  # Model A's question is being answered
+        # For step 6: Model A answers Model B's question (step 4)
+        elif answer_entry["step"] == 6 and participant_id == participant_b_id:
+            return True  # Model B's question is being answered
+        return False
 
     def _format_history(self, participant: ModelParticipant, history_entries: List[Dict]) -> List[Dict]:
         formatted = []
@@ -211,17 +237,13 @@ class Debate:
                     user_seen = True
                 formatted.append({"assistant": entry["response"]})
                 
-            elif same_participant and entry["role"] == "responder":
-                if not user_seen:
-                    # ensure a user line first
-                    formatted.append({"user": "Please provide your prior context."})
-                    user_seen = True
-                formatted.append({"assistant": entry["response"]})
-                
-            else:
-                # lines from the other participant => user
-                formatted.append({"user": entry["response"]})
+            elif not same_participant and entry["role"] == "responder":
+                # This is the opponent's answer to this participant's question
+                # Format it as a user message showing the opponent's response
+                formatted.append({"user": f"Your previous question was answered as follows: {entry['response']}"})
                 user_seen = True
+                
+            # Note: All responder and responder_self entries are excluded from history
 
         return formatted
     
@@ -279,13 +301,34 @@ class Debate:
             challenge_a = participant_a.generate_response(context_a)
             self.transcript.append({
                 "round": round_num,
+                "step": 1,
                 "role": "challenger",
                 "participant": participant_a.model_id,
                 "response": challenge_a
             })
 
             # =========================
-            # 2) Participant B answers A's question
+            # 2) Participant A answers their own question
+            # =========================
+            context_a_self = response_prompt.copy()
+            context_a_self["history"] = self._format_history(
+                participant_a,
+                self._get_history_for(participant_a, round_num)
+            )
+            context_a_self["input"] = f"Answer the following question about {self.topic}: {challenge_a}"
+            context_a_self["round"] = round_num
+
+            response_a_self = participant_a.generate_response(context_a_self)
+            self.transcript.append({
+                "round": round_num,
+                "step": 2,
+                "role": "responder_self",
+                "participant": participant_a.model_id,
+                "response": response_a_self
+            })
+
+            # =========================
+            # 3) Participant B answers A's question
             # =========================
             context_b = response_prompt.copy()
             # HISTORY: only B's own prior messages
@@ -300,13 +343,14 @@ class Debate:
             response_b = participant_b.generate_response(context_b)
             self.transcript.append({
                 "round": round_num,
+                "step": 3,
                 "role": "responder",
                 "participant": participant_b.model_id,
                 "response": response_b
             })
 
             # =========================
-            # 3) Participant B asks a question
+            # 4) Participant B asks a question
             # =========================
             context_b = challenge_prompt.copy()
             context_b["history"] = self._format_history(
@@ -323,13 +367,34 @@ class Debate:
             challenge_b = participant_b.generate_response(context_b)
             self.transcript.append({
                 "round": round_num,
+                "step": 4,
                 "role": "challenger",
                 "participant": participant_b.model_id,
                 "response": challenge_b
             })
 
             # =========================
-            # 4) Participant A answers B's question
+            # 5) Participant B answers their own question
+            # =========================
+            context_b_self = response_prompt.copy()
+            context_b_self["history"] = self._format_history(
+                participant_b,
+                self._get_history_for(participant_b, round_num)
+            )
+            context_b_self["input"] = f"Answer the following question about {self.topic}: {challenge_b}"
+            context_b_self["round"] = round_num
+
+            response_b_self = participant_b.generate_response(context_b_self)
+            self.transcript.append({
+                "round": round_num,
+                "step": 5,
+                "role": "responder_self",
+                "participant": participant_b.model_id,
+                "response": response_b_self
+            })
+
+            # =========================
+            # 6) Participant A answers B's question
             # =========================
             context_a = response_prompt.copy()
             context_a["history"] = self._format_history(
@@ -343,6 +408,7 @@ class Debate:
             response_a = participant_a.generate_response(context_a)
             self.transcript.append({
                 "round": round_num,
+                "step": 6,
                 "role": "responder",
                 "participant": participant_a.model_id,
                 "response": response_a
@@ -354,11 +420,37 @@ class Debate:
 
 class JudgmentCriteria(BaseModel):
     """Evaluation criteria for a round"""
-    # question_quality: str = Field(..., description="Assessment of the quality of both models' questions")
-    # answer_quality: str = Field(..., description="Assessment of the quality of both models' answers")
-    # reasoning: str = Field(..., description="Explanation for why one model performed better than the other")
-    winner: Literal["A", "B"] = Field(..., description="Which model performed better in answering the rival proposed question under the response criteria (A or B)")
-    better_question: Literal["A", "B"] = Field(..., description="Which model asked the better question under the question criteria (A or B)")
+    # Support both simple and detailed evaluation formats
+    winner: Optional[Literal["A", "B"]] = Field(None, description="Which model performed better in answering the rival proposed question under the response criteria (A or B)")
+    reason: Optional[str] = Field(None, description="Reason for the winner")
+    better_question: Optional[Literal["A", "B"]] = Field(None, description="Which model asked the better question under the question criteria (A or B)")
+    
+    # Support detailed evaluation format from deepseek
+    evaluation: Optional[Dict[str, Any]] = Field(None, description="Detailed evaluation with scoring criteria")
+    
+    def get_winner(self) -> Optional[str]:
+        """Extract winner from either simple format or detailed evaluation"""
+        if self.winner:
+            return self.winner
+        if self.evaluation and "overall_winner" in self.evaluation:
+            return self.evaluation["overall_winner"]
+        return None
+    
+    def get_reason(self) -> Optional[str]:
+        """Extract reason from either simple format or detailed evaluation"""
+        if self.reason:
+            return self.reason
+        if self.evaluation and "overall_comment" in self.evaluation:
+            return self.evaluation["overall_comment"]
+        return None
+    
+    def get_better_question(self) -> Optional[str]:
+        """Extract better question from either simple format or detailed evaluation"""
+        if self.better_question:
+            return self.better_question
+        # For detailed format, we might need to infer this from the evaluation
+        # For now, return None if not explicitly provided
+        return None
 
 class FinalAssessment(BaseModel):
     """Final assessment of the entire battle"""
@@ -392,13 +484,13 @@ class Evaluation:
         self.detailed_instructions = detailed_instructions
         self.response_criteria = response_criteria or ["answer accuracy: the ability to provide a correct and complete answer to the question", 
                                                        "Logic: the ability to reason through the question and provide a logical answer", 
-                                                       "Empathy: the ability to sense and understand another person’s feelings, perspectives, and underlying needs, then respond in a way that shows you genuinely “get” where they’re coming from", 
+                                                       "Empathy: the ability to sense and understand another person's feelings, perspectives, and underlying needs, then respond in a way that shows you genuinely get where they're coming from", 
                                                        "Explanation ability: the ability to explain the answer in a way that is easy to understand"]
         self.question_criteria = question_criteria or [
                                                         "Does the question describe a realistic, real-world scenario with enough detail to be actionable (i.e., not overly abstract)?",
                                                         "Is the question squarely focused on the target topic/domain rather than being tangential or unrelated?",
                                                         "Is the question too trivial—could it be answered without meaningful expertise?",
-                                                        "Is the question intentionally crafted to probe (or exploit) a known weakness or gap in the component’s knowledge?"
+                                                        "Is the question intentionally crafted to probe (or exploit) a known weakness or gap in the component's knowledge?"
                                                         ]
 
         self.results = {"round_judgments": {}}
@@ -468,15 +560,17 @@ class Evaluation:
                 
                 
                 # Count the vote for the response
-                if judgment.winner == "A":
+                winner = judgment.get_winner()
+                if winner == "A":
                     round_votes[self.model_a_id] += 1
-                elif judgment.winner == "B":
+                elif winner == "B":
                     round_votes[self.model_b_id] += 1
                 
                 # Count the vote for the question
-                if judgment.better_question == "A":
+                better_question = judgment.get_better_question()
+                if better_question == "A":
                     round_q_votes[self.model_a_id] += 1
-                elif judgment.better_question == "B":
+                elif better_question == "B":
                     round_q_votes[self.model_b_id] += 1
 
             except Exception as e:
@@ -688,7 +782,18 @@ class Evaluation:
             response = entry["response"]
             
             model_label = "Model A" if participant_id == self.model_a_id else "Model B"
-            formatted.append(f"{model_label} ({role}): {response}")
+            
+            # Create more descriptive role labels
+            if role == "challenger":
+                role_label = "asks question"
+            elif role == "responder":
+                role_label = "answers opponent's question"
+            elif role == "responder_self":
+                role_label = "answers own question"
+            else:
+                role_label = role
+                
+            formatted.append(f"{model_label} ({role_label}): {response}")
         
         return "\n\n".join(formatted)
     

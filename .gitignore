@@ -10,4 +10,4 @@ results/
 *.csv
 *.DS_Store
 *.png
-
+*.code-workspace

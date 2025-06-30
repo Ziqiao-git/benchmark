@@ -4,29 +4,20 @@ from pydantic import BaseModel, Field
 from typing import List, Dict, Optional, Any, Literal
 from langchain.output_parsers import PydanticOutputParser
 from langchain.prompts import PromptTemplate
+import json
+import os
+import datetime
 
 class JudgmentCriteria(BaseModel):
-    """
-    Evaluation criteria for a round.
-    Must produce 'winner' (A/B) for the better answer
-    and 'better_question' (A/B) for the better question.
-    """
-    winner: Literal["A", "B"] = Field(..., description="Which model performed better in answering the rival's question under response criteria (A or B)")
-    reason: str = Field(..., description="Reason for the winner")
-    better_question: Literal["A", "B"] = Field(..., description="Which model asked the better question under question criteria (A or B)")
-
-class FinalAssessment(BaseModel):
-    """
-    Final assessment of the entire debate.
-    Must produce 'final_winner' (A/B) for the overall winner
-    and 'better_history_user' (A/B) for who best used historical context to attack.
-    """
-    better_history_user: Literal["A", "B"] = Field(..., description="Which model better used history to attack (A or B)")
-    final_winner: Literal["A", "B"] = Field(..., description="Overall debate winner (A or B)")
+    """Standardized judgment format that all judges must follow"""
+    winner: Literal["A", "B"] = Field(..., description="Which model performed better (A or B)")
+    reason: str = Field(..., description="Detailed explanation for the winner")
+    better_question: Literal["A", "B"] = Field(..., description="Which model asked the better question (A or B)")
 
 class AsyncDebate_and_Judge:
     """
     Runs an asynchronous debate between exactly two participants
+    using the new 6-step structure: A asks → A answers own → B answers A → B asks → B answers own → A answers B
     and spawns asynchronous round-by-round judgments. 
     After all rounds are done, performs a final/holistic assessment.
     """
@@ -38,11 +29,12 @@ class AsyncDebate_and_Judge:
         instruction_set: List[str] = None,
         judges_list: List[ModelParticipant] = None,
         response_criteria: Optional[List[str]] = None,
-        question_criteria: Optional[List[str]] = None
+        question_criteria: Optional[List[str]] = None,
+        auto_judge: bool = True,
+        results_dir: str = "test_results_9"
     ):
         """
         Args:
-            topic: The debate topic
             participants: Exactly two ModelParticipant instances
             rounds: Number of debate rounds
             transcript: Existing transcript (if any) to extend
@@ -50,6 +42,8 @@ class AsyncDebate_and_Judge:
             judges_list: One or more ModelParticipant used as judges
             response_criteria: Criteria for evaluating the answer portion
             question_criteria: Criteria for evaluating the question portion
+            auto_judge: Whether to automatically judge the debate
+            results_dir: Directory to save all results (default: "test_results_9")
         """
         if len(participants) != 2:
             raise ValueError("AsyncDebate_and_Judge requires exactly two participants")
@@ -60,6 +54,7 @@ class AsyncDebate_and_Judge:
 
         self.rounds = rounds
         self.transcript = transcript or []
+        self.results_dir = results_dir
 
         # Basic structure for storing results
         self.results = {"round_judgments": {}}
@@ -75,6 +70,9 @@ class AsyncDebate_and_Judge:
         for j in self.judges:
             if not isinstance(j, ModelParticipant):
                 raise ValueError("All judges must be ModelParticipant instances")
+
+        # Auto-judge setting
+        self.auto_judge = auto_judge
 
         # Enhanced response criteria that prioritize reasoning over brevity
         self.response_criteria = response_criteria or [
@@ -197,45 +195,162 @@ class AsyncDebate_and_Judge:
                 
                 "4. COMMUNICATION EFFECTIVENESS (10% weight):\n"
                 "   - Is the explanation clear and well-structured?\n"
-                "   - Does it provide actionable insights?\n"
-                "   - Note: A longer response that is well-organized and informative should score higher than a brief but incomplete one\n\n"
+                "   - Does it provide actionable insights?\n\n"
                 
-                "WHAT TO REWARD:\n"
-                "✅ Detailed calculations with step-by-step work\n"
-                "✅ Multiple solution approaches compared\n"
-                "✅ Consideration of trade-offs and limitations\n"
-                "✅ References to specific standards or best practices\n"
-                "✅ Nuanced understanding of complex relationships\n"
-                "✅ Practical implementation details\n\n"
+                "RESPONSE CRITERIA:\n{response_criteria}\n\n"
                 
-                "WHAT TO PENALIZE:\n"
-                "❌ Factual errors or miscalculations\n"
-                "❌ Oversimplified responses that miss key complexity\n"
-                "❌ Generic advice without specific application\n"
-                "❌ Failure to address the core technical challenge\n"
-                "❌ Circular reasoning or logical fallacies\n"
-                "❌ Responses that avoid the difficult parts of the question\n\n"
+                "ROUND TRANSCRIPT:\n{transcript}\n\n"
                 
-                "RESPONSE EVALUATION CRITERIA:\n"
-                "{response_criteria}\n\n"
-                
-                "ROUND TRANSCRIPT TO EVALUATE:\n"
-                "{transcript}\n\n"
-                
-                "EVALUATION INSTRUCTIONS:\n"
-                "1. Read both responses completely\n"
-                "2. Identify which demonstrates superior reasoning capabilities\n"
-                "3. Look for evidence of deeper understanding and analytical thinking\n"
-                "4. Consider: If you had to trust one model with a real-world version of this problem, which would you choose?\n"
-                "5. Remember: Advanced models are expected to provide more sophisticated analysis\n\n"
-                
+                "CRITICAL: You must output your evaluation in EXACTLY this JSON format:\n"
                 "{format_instructions}\n\n"
-                
-                "Be rigorous and objective. Favor the response that shows better reasoning, even if it's longer."
+                "The winner must be either 'A' or 'B' (not 'Model A' or 'Model B').\n"
+                "The better_question must be either 'A' or 'B'.\n"
+                "Provide a detailed reason explaining your decision."
             ),
             input_variables=["topic", "response_criteria", "transcript"],
             partial_variables={"format_instructions": self.parser.get_format_instructions()}
         )
+
+    #
+    # ---------------------------
+    #        File I/O Methods
+    # ---------------------------
+    #
+    def save_debate_transcript(self, filename: str = None):
+        """Save debate transcript to JSON"""
+        if not filename:
+            filename = f"{self.results_dir}/debate_results_{self.model_a_id}_{self.model_b_id}.json"
+        
+        debate_data = {
+            "topic": self.topic,
+            "detailed_instructions": self.detailed_instructions,
+            "participants": {
+                "model_a": self.model_a_id,
+                "model_b": self.model_b_id
+            },
+            "rounds": self.rounds,
+            "transcript": self.transcript,
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+        
+        with open(filename, 'w') as f:
+            json.dump(debate_data, f, indent=2)
+        
+        print(f"Debate transcript saved to: {filename}")
+
+    def load_debate_transcript(self, filename: str):
+        """Load debate transcript from JSON"""
+        with open(filename, 'r') as f:
+            data = json.load(f)
+        
+        self.transcript = data["transcript"]
+        self.topic = data.get("topic", self.topic)
+        self.detailed_instructions = data.get("detailed_instructions", self.detailed_instructions)
+        self.rounds = data.get("rounds", self.rounds)
+        
+        print(f"Debate transcript loaded from: {filename}")
+
+    def save_individual_judgment(self, judge_id: str, round_num: int, judgment_data: Dict, order_suffix: str = "original"):
+        """Save individual judge result with order suffix"""
+        
+        # Create directory structure under main folder
+        base_dir = f"{self.results_dir}/judge_results_{self.model_a_id}_{self.model_b_id}"
+        sub_dir = f"round_{round_num}_{order_suffix}"
+        
+        os.makedirs(f"{base_dir}/{sub_dir}", exist_ok=True)
+        
+        # Create filename
+        filename = f"{base_dir}/{sub_dir}/{judge_id}_judgment.json"
+        
+        # Prepare data
+        individual_data = {
+            "judge_id": judge_id,
+            "round_num": round_num,
+            "order": order_suffix,
+            "topic": self.topic,
+            "participants": {
+                "model_a": self.model_a_id,
+                "model_b": self.model_b_id
+            },
+            "timestamp": datetime.datetime.now().isoformat(),
+            "judgment": judgment_data
+        }
+        
+        # Save to file
+        with open(filename, 'w') as f:
+            json.dump(individual_data, f, indent=2)
+        
+        return filename
+
+    def load_individual_judgment(self, judge_id: str, round_num: int, order_suffix: str = "original"):
+        """Load individual judge result from JSON file"""
+        
+        base_dir = f"{self.results_dir}/judge_results_{self.model_a_id}_{self.model_b_id}"
+        sub_dir = f"round_{round_num}_{order_suffix}"
+        
+        filename = f"{base_dir}/{sub_dir}/{judge_id}_judgment.json"
+        
+        if os.path.exists(filename):
+            with open(filename, 'r') as f:
+                return json.load(f)
+        return None
+
+    def save_judgment_results(self, filename: str = None):
+        """Save aggregate judgment results to JSON"""
+        if not filename:
+            filename = f"{self.results_dir}/judgment_results_{self.model_a_id}_{self.model_b_id}.json"
+        
+        judgment_data = {
+            "topic": self.topic,
+            "participants": {
+                "model_a": self.model_a_id,
+                "model_b": self.model_b_id
+            },
+            "judges": [judge.model_id for judge in self.judges],
+            "round_judgments": self.results["round_judgments"],
+            "individual_files_directory": f"{self.results_dir}/judge_results_{self.model_a_id}_{self.model_b_id}",
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+        
+        with open(filename, 'w') as f:
+            json.dump(judgment_data, f, indent=2)
+        
+        print(f"Judgment results saved to: {filename}")
+
+    def get_judge_results_summary(self):
+        """Get summary of all individual judge results"""
+        base_dir = f"{self.results_dir}/judge_results_{self.model_a_id}_{self.model_b_id}"
+        
+        summary = {
+            "total_rounds": self.rounds,
+            "judges": [judge.model_id for judge in self.judges],
+            "round_results": {}
+        }
+        
+        # Check each round
+        for round_num in range(1, self.rounds + 1):
+            summary["round_results"][round_num] = {
+                "original_order": [],
+                "switched_order": []
+            }
+            
+            # Check original order
+            original_dir = f"{base_dir}/round_{round_num}_original"
+            if os.path.exists(original_dir):
+                for judge in self.judges:
+                    judge_file = f"{original_dir}/{judge.model_id}_judgment.json"
+                    if os.path.exists(judge_file):
+                        summary["round_results"][round_num]["original_order"].append(judge.model_id)
+            
+            # Check switched order
+            switched_dir = f"{base_dir}/round_{round_num}_switched"
+            if os.path.exists(switched_dir):
+                for judge in self.judges:
+                    judge_file = f"{switched_dir}/{judge.model_id}_judgment.json"
+                    if os.path.exists(judge_file):
+                        summary["round_results"][round_num]["switched_order"].append(judge.model_id)
+        
+        return summary
 
     #
     # ---------------------------
@@ -245,92 +360,134 @@ class AsyncDebate_and_Judge:
     async def run_debate(self) -> Dict[str, Any]:
         """
         Orchestrates all debate rounds asynchronously.
-        Spawns parallel tasks for each round's partial judgment.
-        Concludes with a final holistic evaluation.
+        If auto_judge is True, spawns parallel tasks for each round's partial judgment.
+        Otherwise, runs debate only.
         """
-        judge_tasks = []
-        try: 
-            for round_num in range(1, self.rounds + 1):
-                # Run the Q&A for this round (sequentially)
-                round_entries = await self.debate_round(round_num)
-                # Add the new entries to the transcript
-                self.transcript.extend(round_entries)
+        if self.auto_judge:
+            # Original behavior: run debate and judge together
+            judge_tasks = []
+            try: 
+                for round_num in range(1, self.rounds + 1):
+                    # Run the Q&A for this round (sequentially)
+                    round_entries = await self.debate_round(round_num)
+                    # Add the new entries to the transcript
+                    self.transcript.extend(round_entries)
 
-                # Launch an async judge task for just-finished round
-                t = asyncio.create_task(self.judge_round_async(round_num, round_entries))
-                judge_tasks.append(t)
+                    # Launch an async judge task for just-finished round
+                    t = asyncio.create_task(self.judge_round_async(round_num, round_entries))
+                    judge_tasks.append(t)
 
-            # Wait until all partial round judgments are complete
-            await asyncio.gather(*judge_tasks)
+                # Wait until all partial round judgments are complete
+                await asyncio.gather(*judge_tasks)
 
-            return {
-                "transcript": self.transcript,
-                "round_judgments": self.results["round_judgments"],
-                # "final_assessment": final_result
-            }
-        except Exception as e:
-            return {
-            "transcript": self.transcript,
-            "round_judgments": self.results.get("round_judgments", {}),
-            "error": str(e),
-        }
+                # Save results
+                self.save_debate_transcript()
+                self.save_judgment_results()
+
+                return {
+                    "transcript": self.transcript,
+                    "round_judgments": self.results["round_judgments"],
+                    "status": "debate_and_judging_completed"
+                }
+            except Exception as e:
+                return {
+                    "transcript": self.transcript,
+                    "round_judgments": self.results.get("round_judgments", {}),
+                    "error": str(e),
+                    "status": "debate_and_judging_failed"
+                }
+        else:
+            # New behavior: run debate only
+            return await self.run_debate_only()
 
     async def debate_round(self, round_num: int) -> List[Dict]:
         """
-        Run a single round (two challenges, two answers):
-          1) Participant A => challenger, B => answerer
-          2) Participant B => challenger, A => answerer
+        Run a single round with the new 6-step structure:
+          1) Participant A asks a question
+          2) Participant A answers their own question
+          3) Participant B answers A's question
+          4) Participant B asks a question
+          5) Participant B answers their own question
+          6) Participant A answers B's question
         Returns the new transcript entries for that round.
         """
         round_entries = []
 
-        # 1) A asks, B answers
-        question_from_a = await self.ask_question(self.participants[0], round_num)
-        round_entries.append(question_from_a)
+        # 1) A asks a question
+        question_a = await self.ask_question(self.participants[0], round_num)
+        round_entries.append(question_a)
 
-        answer_b = await self.answer_question(self.participants[1], question_from_a, round_num)
+        # 2) A answers their own question
+        answer_a_self = await self.answer_own_question(self.participants[0], question_a, round_num)
+        round_entries.append(answer_a_self)
+
+        # 3) B answers A's question
+        answer_b = await self.answer_opponent_question(self.participants[1], question_a, round_num)
         round_entries.append(answer_b)
 
-        # 2) B asks, A answers
-        question_from_b = await self.ask_question(self.participants[1], round_num)
-        round_entries.append(question_from_b)
+        # 4) B asks a question
+        question_b = await self.ask_question(self.participants[1], round_num)
+        round_entries.append(question_b)
 
-        answer_a = await self.answer_question(self.participants[0], question_from_b, round_num)
+        # 5) B answers their own question
+        answer_b_self = await self.answer_own_question(self.participants[1], question_b, round_num)
+        round_entries.append(answer_b_self)
+
+        # 6) A answers B's question
+        answer_a = await self.answer_opponent_question(self.participants[0], question_b, round_num)
         round_entries.append(answer_a)
 
         return round_entries
 
     async def ask_question(self, challenger: ModelParticipant, round_num: int) -> Dict:
         """
-        The challenger sees ONLY their own prior 'challenger' lines up to this round
-        (no answers, no rival's questions).
-        Prompts them to produce a new question for the opponent.
+        The challenger sees their own prior questions and opponent's answers to their questions
+        (strategic information flow). Prompts them to produce a new question for the opponent.
         """
         context = self.challenge_prompt.copy()
-        context["history"] = self._get_challenger_history_for(challenger, round_num)
+        context["history"] = self._format_history_for(challenger, round_num)
         context["input"] = (
             f"Create a challenging question about {self.topic} that "
             "will be difficult for your opponent to answer correctly. "
-            "Use any of your own prior questions to refine it and avoid repetition. "
-            "Make this question more sophisticated and targeted than your previous ones."
+            "Use any past context you have (only your own questions and opponent's answers to your questions) to refine it."
         )
         context["round"] = round_num
 
         question_text = await challenger.generate_response_async(context)  # must be an async model call
         return {
             "round": round_num,
+            "step": 1 if challenger.model_id == self.model_a_id else 4,
             "role": "challenger",
             "participant": challenger.model_id,
             "response": question_text
         }
 
-    async def answer_question(self, responder: ModelParticipant, question_entry: Dict, round_num: int) -> Dict:
+    async def answer_own_question(self, participant: ModelParticipant, question_entry: Dict, round_num: int) -> Dict:
         """
-        The responder sees only *their own* prior messages (if you want them to see them),
-        or you can hide them; current code hides everything except the direct question.
+        The participant answers their own question. They see their own questions and opponent's answers to their questions.
+        """
+        context = self.response_prompt.copy()
+        context["history"] = self._format_history_for(participant, round_num)
+        q_text = question_entry["response"]
+        context["input"] = f"Answer the following question about {self.topic}: {q_text}"
+        context["round"] = round_num
+
+        answer_text = await participant.generate_response_async(context)  # must be an async call
+        return {
+            "round": round_num,
+            "step": 2 if participant.model_id == self.model_a_id else 5,
+            "role": "responder_self",
+            "participant": participant.model_id,
+            "response": answer_text
+        }
+
+    async def answer_opponent_question(self, responder: ModelParticipant, question_entry: Dict, round_num: int) -> Dict:
+        """
+        The responder answers the opponent's question. They see their own questions and opponent's answers to their questions.
         The 'input' to the responder is the question text from the challenger.
         """
         context = self.response_prompt.copy()
+        context["history"] = self._format_history_for(responder, round_num)
         q_text = question_entry["response"]
         context["input"] = f"Answer the following question about {self.topic}: {q_text}"
         context["round"] = round_num
@@ -338,22 +495,80 @@ class AsyncDebate_and_Judge:
         answer_text = await responder.generate_response_async(context)  # must be an async call
         return {
             "round": round_num,
+            "step": 3 if responder.model_id == self.model_b_id else 6,
             "role": "responder",
             "participant": responder.model_id,
             "response": answer_text
         }
 
-    def _get_challenger_history_for(self, participant: ModelParticipant, up_to_round: int) -> List[Dict]:
+    def _get_history_for(self, participant: ModelParticipant, round_num: int) -> List[Dict]:
         """
-        Return all lines where this participant was 'challenger' in previous rounds.
-        i.e., A does not see B's lines, nor does it see its own answers from prior rounds.
+        Retrieve the conversation history for this participant, showing:
+        * The questions that participant has asked in all rounds up to (and including) 'round_num'
+        * The opponent's answers to this participant's questions (to allow strategic adaptation)
+        
+        This means the participant sees:
+        - Their own questions
+        - Opponent's answers to their own questions
+        - BUT NOT: Their own answers to any questions, or opponent's questions
         """
-        return [
-            e for e in self.transcript
-            if e["participant"] == participant.model_id
-            and e["role"] == "challenger"
-            and e["round"] < up_to_round
-        ]
+        filtered_history = []
+        for entry in self.transcript:
+            if entry["round"] <= round_num:
+                # Include participant's own questions only
+                if entry["participant"] == participant.model_id and entry["role"] == "challenger":
+                    filtered_history.append(entry)
+                # Include opponent's answers to this participant's questions
+                elif (entry["participant"] != participant.model_id and 
+                      entry["role"] == "responder" and
+                      self._is_answering_participants_question(entry, participant.model_id)):
+                    filtered_history.append(entry)
+        return filtered_history
+    
+    def _is_answering_participants_question(self, answer_entry: Dict, participant_id: str) -> bool:
+        """
+        Check if this answer is responding to a question asked by the specified participant.
+        Using step information to accurately match questions and answers.
+        """
+        # For step 3: Model B answers Model A's question (step 1)
+        # We want to know if this answer is responding to participant_id's question
+        if answer_entry["step"] == 3 and participant_id == self.model_a_id:
+            return True  # Model A's question is being answered
+        # For step 6: Model A answers Model B's question (step 4)
+        elif answer_entry["step"] == 6 and participant_id == self.model_b_id:
+            return True  # Model B's question is being answered
+        return False
+
+    def _format_history_for(self, participant: ModelParticipant, round_num: int) -> List[Dict]:
+        """
+        Format the history for the model in the expected format.
+        """
+        history_entries = self._get_history_for(participant, round_num)
+        formatted = []
+        
+        # Check if we have appended any user lines yet
+        user_seen = False
+
+        for entry in history_entries:
+            same_participant = entry["participant"] == participant.model_id
+            
+            if same_participant and entry["role"] == "challenger":
+                # If no user message has ever been appended, then first ensure
+                # the first line after system is user
+                if not user_seen:
+                    formatted.append({"user": "Please propose a question now."})
+                    user_seen = True
+                formatted.append({"assistant": entry["response"]})
+                
+            elif not same_participant and entry["role"] == "responder":
+                # This is the opponent's answer to this participant's question
+                # Format it as a user message showing the opponent's response
+                formatted.append({"user": f"Your previous question was answered as follows: {entry['response']}"})
+                user_seen = True
+                
+            # Note: All responder and responder_self entries are excluded from history
+
+        return formatted
 
     #
     # ---------------------------
@@ -361,27 +576,119 @@ class AsyncDebate_and_Judge:
     # ---------------------------
     #
     async def judge_round_async(self, round_num: int, round_entries: List[Dict]) -> Dict[str, Any]:
-        """
-        Asynchronously calls each judge on the *just finished* round's transcript.
-        Collates the votes for 'winner' and 'better_question' into self.results.
-        """
+        """Judge a single round with both original and switched response orders"""
+        
+        print(f"Judging round {round_num} with order switching...")
+        
+        # Get the two responses for this round
+        responses = self._extract_responses_from_round(round_entries)
+        
+        if len(responses) != 2:
+            print(f"Warning: Expected 2 responses for round {round_num}, got {len(responses)}")
+            return {
+                "error": f"Invalid number of responses: {len(responses)}",
+                "round_num": round_num
+            }
+        
+        # Judge with original order (A first, B second)
+        print(f"  Judging round {round_num} with original order (A first, B second)...")
+        original_judgments = await self._judge_responses_with_order(
+            round_num, responses, order="original"
+        )
+        
+        # Judge with switched order (B first, A second)
+        print(f"  Judging round {round_num} with switched order (B first, A second)...")
+        switched_judgments = await self._judge_responses_with_order(
+            round_num, responses, order="switched"
+        )
+        
+        # Combine and average the results
+        combined_judgments = self._combine_judgment_results(
+            original_judgments, switched_judgments, round_num
+        )
+        
+        # Store in results
+        self.results["round_judgments"][round_num] = combined_judgments
+        
+        print(f"Round {round_num} judging completed with order bias analysis")
+        
+        return combined_judgments
+
+    def _extract_responses_from_round(self, round_entries: List[Dict]) -> Dict[str, str]:
+        """Extract the two responses from a round"""
+        responses = {}
+        
+        for entry in round_entries:
+            if entry["role"] == "responder" or entry["role"] == "responder_self":
+                participant = entry["participant"]
+                if participant == self.model_a_id:
+                    responses["A"] = entry["response"]
+                elif participant == self.model_b_id:
+                    responses["B"] = entry["response"]
+        
+        return responses
+
+    def _create_ordered_transcript(self, responses: Dict[str, str], first: str, second: str) -> str:
+        """Create transcript with responses in specified order"""
+        
+        first_response = responses.get(first, "")
+        second_response = responses.get(second, "")
+        
+        transcript = f"""Model {first} Response:
+{first_response}
+
+Model {second} Response:
+{second_response}"""
+        
+        return transcript
+
+    def _detect_order_bias(self, original: Dict, switched: Dict) -> Dict[str, Any]:
+        """Detect if there's bias based on response order"""
+        
+        original_a_wins = original["votes"][self.model_a_id]
+        original_b_wins = original["votes"][self.model_b_id]
+        switched_a_wins = switched["votes"][self.model_a_id]
+        switched_b_wins = switched["votes"][self.model_b_id]
+        
+        # Check if results are significantly different between orders
+        original_diff = abs(original_a_wins - original_b_wins)
+        switched_diff = abs(switched_a_wins - switched_b_wins)
+        
+        bias_detected = abs(original_diff - switched_diff) > 1  # More than 1 vote difference
+        
+        return {
+            "bias_detected": bias_detected,
+            "original_order_difference": original_diff,
+            "switched_order_difference": switched_diff,
+            "consistency_score": 1.0 - (abs(original_diff - switched_diff) / max(original_diff + switched_diff, 1))
+        }
+
+    async def _judge_responses_with_order(self, round_num: int, responses: Dict[str, str], order: str) -> Dict[str, Any]:
+        """Judge responses with specific order (original or switched)"""
+        
+        # Create transcript with specified order
+        if order == "original":
+            # A first, B second
+            ordered_transcript = self._create_ordered_transcript(responses, "A", "B")
+            order_suffix = "original"
+        else:
+            # B first, A second
+            ordered_transcript = self._create_ordered_transcript(responses, "B", "A")
+            order_suffix = "switched"
+        
+        # Judge with this order
         round_judgments = {}
-        # Tally votes (e.g. if you have multiple judges)
         round_votes = {self.model_a_id: 0, self.model_b_id: 0}
         round_q_votes = {self.model_a_id: 0, self.model_b_id: 0}
-
-        # Convert round entries to text for judging
-        round_text = self._format_round(round_entries)
-
-        # For each judge, get structured output
+        
         for judge in self.judges:
-            # Build the prompt
+            # Build the prompt with ordered transcript
             prompt = self.prompt_template.format(
                 topic=self.topic,
                 response_criteria="\n".join([f"- {criterion}" for criterion in self.response_criteria]),
-                transcript=round_text
+                transcript=ordered_transcript
             )
-
+            
             judge_context = {
                 "system_prompt": (
                     "You are an expert judge evaluating AI model capabilities. Your goal is to identify superior reasoning and expertise, "
@@ -390,284 +697,159 @@ class AsyncDebate_and_Judge:
                 ),
                 "input": prompt
             }
-
-            # Call the judge model with a timeout (skip if it hangs)
+            
             try:
                 judgment_raw = await asyncio.wait_for(
                     judge.generate_response_async(judge_context),
-                    timeout=90,   # seconds; tweak as needed
+                    timeout=90,
                 )
             except asyncio.TimeoutError:
-                round_judgments[judge.model_id] = {"error": "timeout"}
+                judgment_data = {"error": "timeout"}
+                round_judgments[judge.model_id] = judgment_data
+                # Save individual timeout result with order suffix
+                self.save_individual_judgment(judge.model_id, round_num, judgment_data, order_suffix)
                 continue
-
+            
             try:
-                # Parse structured output
                 judgment = self.parser.parse(judgment_raw)
-                round_judgments[judge.model_id] = judgment.dict()
-
-                # Tally votes
-                if judgment.winner == "A":
+                judgment_data = judgment.dict()
+                round_judgments[judge.model_id] = judgment_data
+                
+                # Save individual result with order suffix
+                self.save_individual_judgment(judge.model_id, round_num, judgment_data, order_suffix)
+                
+                # Tally votes (need to map back to original A/B if order was switched)
+                if order == "original":
+                    winner = judgment.winner
+                    better_question = judgment.better_question
+                else:
+                    # If order was switched, swap A/B back
+                    winner = "B" if judgment.winner == "A" else "A"
+                    better_question = "B" if judgment.better_question == "A" else "A"
+                
+                if winner == "A":
                     round_votes[self.model_a_id] += 1
-                else:
+                elif winner == "B":
                     round_votes[self.model_b_id] += 1
-
-                if judgment.better_question == "A":
+                
+                if better_question == "A":
                     round_q_votes[self.model_a_id] += 1
-                else:
+                elif better_question == "B":
                     round_q_votes[self.model_b_id] += 1
-
+                    
             except Exception as e:
-                # If parsing fails, store raw
-                round_judgments[judge.model_id] = {
+                judgment_data = {
                     "raw_judgment": judgment_raw,
                     "parse_error": str(e)
                 }
+                round_judgments[judge.model_id] = judgment_data
+                self.save_individual_judgment(judge.model_id, round_num, judgment_data, order_suffix)
+        
+        return {
+            "judgments": round_judgments,
+            "votes": round_votes,
+            "question_votes": round_q_votes,
+            "order": order
+        }
 
-        # Decide final round winners
-        if round_votes[self.model_a_id] > round_votes[self.model_b_id]:
+    def _combine_judgment_results(self, original: Dict, switched: Dict, round_num: int) -> Dict[str, Any]:
+        """Combine results from both orders"""
+        
+        # Combine votes
+        combined_votes = {
+            self.model_a_id: original["votes"][self.model_a_id] + switched["votes"][self.model_a_id],
+            self.model_b_id: original["votes"][self.model_b_id] + switched["votes"][self.model_b_id]
+        }
+        
+        combined_q_votes = {
+            self.model_a_id: original["question_votes"][self.model_a_id] + switched["question_votes"][self.model_a_id],
+            self.model_b_id: original["question_votes"][self.model_b_id] + switched["question_votes"][self.model_b_id]
+        }
+        
+        # Determine winners
+        if combined_votes[self.model_a_id] > combined_votes[self.model_b_id]:
             round_winner = self.model_a_id
-        elif round_votes[self.model_a_id] < round_votes[self.model_b_id]:
+        elif combined_votes[self.model_a_id] < combined_votes[self.model_b_id]:
             round_winner = self.model_b_id
         else:
             round_winner = "tie"
-
-        if round_q_votes[self.model_a_id] > round_q_votes[self.model_b_id]:
+        
+        if combined_q_votes[self.model_a_id] > combined_q_votes[self.model_b_id]:
             better_question_asker = self.model_a_id
-        elif round_q_votes[self.model_a_id] < round_q_votes[self.model_b_id]:
+        elif combined_q_votes[self.model_a_id] < combined_q_votes[self.model_b_id]:
             better_question_asker = self.model_b_id
         else:
             better_question_asker = "tie"
-
-        round_results = {
-            "judgments": round_judgments,
-            "votes": round_votes,
+        
+        return {
+            "judgments": {
+                "original_order": original["judgments"],
+                "switched_order": switched["judgments"]
+            },
+            "votes": combined_votes,
             "winner": round_winner,
-            "question_votes": round_q_votes,
-            "better_question_asker": better_question_asker
+            "question_votes": combined_q_votes,
+            "better_question_asker": better_question_asker,
+            "order_analysis": {
+                "original_votes": original["votes"],
+                "switched_votes": switched["votes"],
+                "order_bias_detected": self._detect_order_bias(original, switched)
+            }
         }
 
-        # Store in results
-        self.results["round_judgments"][round_num] = round_results
-        return round_results
-
-    async def judge_final_async(self) -> Dict[str, Any]:
+    async def run_debate_only(self) -> Dict[str, Any]:
         """
-        Once all rounds are complete, each judge does a holistic final assessment
-        of the entire debate (all rounds).
+        Run all debate rounds sequentially without any judging.
+        Save transcript to JSON and return results immediately.
         """
-        # Summaries for the "battle" and question usage
-        battle_summary = {
-            "model_a_wins": 0,
-            "model_b_wins": 0,
-            "ties": 0
-        }
-        question_summary = {
-            "model_a_wins": 0,
-            "model_b_wins": 0,
-            "ties": 0
-        }
+        try:
+            for round_num in range(1, self.rounds + 1):
+                # Run the Q&A for this round (sequentially)
+                round_entries = await self.debate_round(round_num)
+                # Add the new entries to the transcript
+                self.transcript.extend(round_entries)
+                
+                print(f"Round {round_num} completed")
 
-        # Count how many times each model won in each round
-        for round_num, round_result in self.results["round_judgments"].items():
-            if round_result["winner"] == self.model_a_id:
-                battle_summary["model_a_wins"] += 1
-            elif round_result["winner"] == self.model_b_id:
-                battle_summary["model_b_wins"] += 1
-            else:
-                battle_summary["ties"] += 1
-
-            if round_result["better_question_asker"] == self.model_a_id:
-                question_summary["model_a_wins"] += 1
-            elif round_result["better_question_asker"] == self.model_b_id:
-                question_summary["model_b_wins"] += 1
-            else:
-                question_summary["ties"] += 1
-
-        # Prepare final prompt
-        final_parser = PydanticOutputParser(pydantic_object=FinalAssessment)
-        final_prompt_template = PromptTemplate(
-            template=(
-                "You are conducting a FINAL EVALUATION of an entire knowledge battle between two AI models on {topic}.\n\n"
-                
-                "Your task is to determine which model consistently demonstrated SUPERIOR REASONING AND EXPERTISE throughout the debate.\n\n"
-                
-                "HOLISTIC EVALUATION CRITERIA:\n"
-                
-                "1. REASONING CONSISTENCY (35%):\n"
-                "   - Which model showed more sophisticated analytical thinking across rounds?\n"
-                "   - Who demonstrated better problem-solving methodologies?\n"
-                "   - Which responses showed deeper logical reasoning?\n\n"
-                
-                "2. TECHNICAL MASTERY (30%):\n"
-                "   - Which model provided more accurate technical details?\n"
-                "   - Who showed deeper domain expertise?\n"
-                "   - Which model better handled complex calculations and specifications?\n\n"
-                
-                "3. STRATEGIC QUESTIONING (20%):\n"
-                "   - Which model created more challenging, expert-level questions?\n"
-                "   - Who better used conversation history to probe weaknesses?\n"
-                "   - Which questions required more sophisticated knowledge to answer?\n\n"
-                
-                "4. ADAPTIVE INTELLIGENCE (15%):\n"
-                "   - Which model showed better understanding of context and nuance?\n"
-                "   - Who provided more comprehensive solutions?\n"
-                "   - Which model better handled unexpected or complex scenarios?\n\n"
-                
-                "IMPORTANT CONSIDERATIONS:\n"
-                "- Large models are expected to provide more detailed, nuanced responses\n"
-                "- Favor depth of reasoning over brevity\n"
-                "- Consider which model you would trust with real-world applications\n"
-                "- Look for evidence of genuine understanding vs. pattern matching\n\n"
-                
-                "ROUND SUMMARY:\n"
-                "{round_summary}\n\n"
-                
-                "COMPLETE BATTLE TRANSCRIPT:\n"
-                "{full_transcript}\n\n"
-                
-                "ANALYSIS QUESTIONS:\n"
-                "1. Which model consistently provided more sophisticated reasoning?\n"
-                "2. Which model's technical knowledge appeared more comprehensive?\n"
-                "3. Which model created more challenging and insightful questions?\n"
-                "4. If you had to choose one model for real-world expert consultation, which would it be?\n\n"
-                
-                "{format_instructions}\n\n"
-                
-                "Provide your assessment based on overall reasoning capability and expertise demonstration."
-            ),
-            input_variables=["topic", "round_summary", "full_transcript"],
-            partial_variables={"format_instructions": final_parser.get_format_instructions()}
-        )
-
-        # Prepare text for each round
-        round_numbers = sorted(self.results["round_judgments"].keys())
-        # Summaries
-        round_summary_list = []
-        for rn in round_numbers:
-            r = self.results["round_judgments"][rn]
-            if r["winner"] == self.model_a_id:
-                w = "Model A"
-            elif r["winner"] == self.model_b_id:
-                w = "Model B"
-            else:
-                w = "Tie"
-            round_summary_list.append(f"Round {rn}: Winner = {w}")
-
-        # Full transcript text
-        full_transcript_list = []
-        for rn in round_numbers:
-            rn_entries = [e for e in self.transcript if e["round"] == rn]
-            round_str = self._format_round(rn_entries)
-            full_transcript_list.append(f"--- Round {rn} ---\n{round_str}")
-
-        # Build final prompt text
-        round_summary_text = "\n".join(round_summary_list)
-        full_transcript_text = "\n\n".join(full_transcript_list)
-
-        # We will gather final_assessments from all judges
-        final_assessments = {}
-
-        # Tally votes across judges
-        final_votes = {self.model_a_id: 0, self.model_b_id: 0, "tie": 0}
-        history_usage_votes = {self.model_a_id: 0, self.model_b_id: 0}
-
-        # Let each judge produce a final verdict
-        for judge in self.judges:
-            prompt = final_prompt_template.format(
-                topic=self.topic,
-                round_summary=round_summary_text,
-                full_transcript=full_transcript_text
-            )
-
-            judge_context = {
-                "system_prompt": (
-                    "You are an expert judge conducting final evaluation of AI reasoning capabilities. "
-                    "Your goal is to identify which model demonstrated superior analytical thinking, technical expertise, "
-                    "and problem-solving ability throughout the entire debate. Reward depth of reasoning over brevity. "
-                    "Output must follow the specified JSON schema exactly."
-                ),
-                "input": prompt
+            # Save transcript to JSON
+            self.save_debate_transcript()
+            
+            return {
+                "transcript": self.transcript,
+                "rounds_completed": self.rounds,
+                "status": "debate_completed"
+            }
+        except Exception as e:
+            return {
+                "transcript": self.transcript,
+                "error": str(e),
+                "status": "debate_failed"
             }
 
-            try:
-                assessment_raw = await asyncio.wait_for(
-                    judge.generate_response_async(judge_context),
-                    timeout=120,  # holistic judgment might take longer
-                )
-            except asyncio.TimeoutError:
-                final_assessments[judge.model_id] = {"error": "timeout"}
-                continue
-            try:
-                final_struct = final_parser.parse(assessment_raw)
-                final_assessments[judge.model_id] = final_struct.dict()
-
-                # Tally the final_winner
-                if final_struct.final_winner == "A":
-                    final_votes[self.model_a_id] += 1
-                elif final_struct.final_winner == "B":
-                    final_votes[self.model_b_id] += 1
-                else:
-                    final_votes["tie"] += 1
-
-                # Tally the better_history_user
-                if final_struct.better_history_user == "A":
-                    history_usage_votes[self.model_a_id] += 1
-                else:
-                    history_usage_votes[self.model_b_id] += 1
-
-            except Exception as e:
-                final_assessments[judge.model_id] = {
-                    "raw_assessment": assessment_raw,
-                    "parse_error": str(e)
-                }
-
-        # Compute overall final_winner
-        if final_votes[self.model_a_id] > final_votes[self.model_b_id] and final_votes[self.model_a_id] > final_votes["tie"]:
-            overall_winner = self.model_a_id
-        elif final_votes[self.model_b_id] > final_votes[self.model_a_id] and final_votes[self.model_b_id] > final_votes["tie"]:
-            overall_winner = self.model_b_id
-        else:
-            overall_winner = "tie"
-
-        # Compute better_history_user (just whichever got the most votes)
-        # If tie, choose one or store "tie" as well—feel free to handle it differently.
-        if history_usage_votes[self.model_a_id] > history_usage_votes[self.model_b_id]:
-            better_history_user = self.model_a_id
-        elif history_usage_votes[self.model_b_id] > history_usage_votes[self.model_a_id]:
-            better_history_user = self.model_b_id
-        else:
-            better_history_user = "tie"
-
-        final_results = {
-            "round_results": self.results["round_judgments"],  # detailed round info
-            "battle_summary": battle_summary,
-            "question_summary": question_summary,
-            "final_assessments": final_assessments,     # raw final outputs from judges
-            "final_votes": final_votes,
-            "history_usage_votes": history_usage_votes,
-            "overall_winner": overall_winner,
-            "better_history_user": better_history_user
+    async def judge_transcript_only(self, transcript_json_path: str = None) -> Dict[str, Any]:
+        """
+        Load transcript from JSON and run judging only.
+        If no path provided, use current transcript.
+        """
+        # Load transcript if provided
+        if transcript_json_path:
+            self.load_debate_transcript(transcript_json_path)
+        
+        # Spawn async judge tasks for all rounds
+        judge_tasks = []
+        for round_num in range(1, self.rounds + 1):
+            round_entries = [entry for entry in self.transcript if entry["round"] == round_num]
+            if round_entries:
+                t = asyncio.create_task(self.judge_round_async(round_num, round_entries))
+                judge_tasks.append(t)
+        
+        # Wait for all judgments to complete
+        await asyncio.gather(*judge_tasks)
+        
+        # Save judgment results
+        self.save_judgment_results()
+        
+        return {
+            "round_judgments": self.results["round_judgments"],
+            "status": "judging_completed"
         }
-
-        # Update self.results
-        self.results.update(final_results)
-        return final_results
-
-    def _format_round(self, round_entries: List[Dict]) -> str:
-        """
-        Turn a single round's Q/A exchanges into a readable text block for the judge.
-        (Similar to the synchronous version in model_interactions.)
-        """
-        lines = []
-        for e in round_entries:
-            pid = e["participant"]
-            role = e["role"]
-            if pid == self.model_a_id:
-                model_label = "Model A"
-            elif pid == self.model_b_id:
-                model_label = "Model B"
-            else:
-                model_label = pid  # fallback
-            lines.append(f"{model_label} ({role}): {e['response']}")
-        return "\n".join(lines)
