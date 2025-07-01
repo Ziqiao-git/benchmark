@@ -12,7 +12,6 @@ class JudgmentCriteria(BaseModel):
     """Standardized judgment format that all judges must follow"""
     winner: Literal["A", "B"] = Field(..., description="Which model performed better (A or B)")
     reason: str = Field(..., description="Detailed explanation for the winner")
-    better_question: Literal["A", "B"] = Field(..., description="Which model asked the better question (A or B)")
 
 class AsyncDebate_and_Judge:
     """
@@ -166,13 +165,34 @@ class AsyncDebate_and_Judge:
         # We will need a parser and prompt template for partial round judgments
         self.parser = PydanticOutputParser(pydantic_object=JudgmentCriteria)
 
-        # Enhanced judging prompt template
+        # Legacy prompt template for backward compatibility
         self.prompt_template = PromptTemplate(
             template=(
                 "You are evaluating a knowledge battle between two AI models on {topic}.\n\n"
                 
+                "RESPONSE CRITERIA:\n{response_criteria}\n\n"
+                
+                "ROUND TRANSCRIPT:\n{transcript}\n\n"
+                
+                "CRITICAL: You must output your evaluation in EXACTLY this JSON format:\n"
+                "{format_instructions}\n\n"
+                "The winner must be either 'A' or 'B' (not 'Model A' or 'Model B').\n"
+                "Provide a detailed reason explaining your decision."
+            ),
+            input_variables=["topic", "response_criteria", "transcript"],
+            partial_variables={"format_instructions": self.parser.get_format_instructions()}
+        )
+
+        # Enhanced judging prompt template for question-response sessions
+        self.session_prompt_template = PromptTemplate(
+            template=(
+                "You are evaluating responses to a specific question on {topic}.\n\n"
+                
+                "QUESTION ASKED:\n{question}\n\n"
+                
                 "CRITICAL JUDGING INSTRUCTIONS:\n"
-                "Your goal is to identify which model demonstrates SUPERIOR REASONING CAPABILITIES, not which gives the shortest answer.\n"
+                "Your goal is to identify which model provides the BETTER RESPONSE to this specific question.\n"
+                "Focus on which response demonstrates superior reasoning capabilities and domain expertise.\n"
                 "Large, advanced models often provide more detailed, nuanced responses that demonstrate deeper understanding.\n"
                 "Do not penalize a response for being thorough if that thoroughness adds value.\n\n"
                 
@@ -199,15 +219,14 @@ class AsyncDebate_and_Judge:
                 
                 "RESPONSE CRITERIA:\n{response_criteria}\n\n"
                 
-                "ROUND TRANSCRIPT:\n{transcript}\n\n"
+                "RESPONSES TO EVALUATE:\n{responses}\n\n"
                 
                 "CRITICAL: You must output your evaluation in EXACTLY this JSON format:\n"
                 "{format_instructions}\n\n"
                 "The winner must be either 'A' or 'B' (not 'Model A' or 'Model B').\n"
-                "The better_question must be either 'A' or 'B'.\n"
-                "Provide a detailed reason explaining your decision."
+                "Provide a detailed reason explaining your decision based on the quality of the responses to the specific question."
             ),
-            input_variables=["topic", "response_criteria", "transcript"],
+            input_variables=["topic", "question", "response_criteria", "responses"],
             partial_variables={"format_instructions": self.parser.get_format_instructions()}
         )
 
@@ -250,12 +269,16 @@ class AsyncDebate_and_Judge:
         
         print(f"Debate transcript loaded from: {filename}")
 
-    def save_individual_judgment(self, judge_id: str, round_num: int, judgment_data: Dict, order_suffix: str = "original"):
-        """Save individual judge result with order suffix"""
+    def save_individual_judgment(self, judge_id: str, round_num: int, judgment_data: Dict, order_suffix: str = "original", session: str = None):
+        """Save individual judge result with order suffix and session"""
         
         # Create directory structure under main folder
         base_dir = f"{self.results_dir}/judge_results_{self.model_a_id}_{self.model_b_id}"
-        sub_dir = f"round_{round_num}_{order_suffix}"
+        
+        if session:
+            sub_dir = f"round_{round_num}_{session}_{order_suffix}"
+        else:
+            sub_dir = f"round_{round_num}_{order_suffix}"
         
         os.makedirs(f"{base_dir}/{sub_dir}", exist_ok=True)
         
@@ -266,6 +289,7 @@ class AsyncDebate_and_Judge:
         individual_data = {
             "judge_id": judge_id,
             "round_num": round_num,
+            "session": session,
             "order": order_suffix,
             "topic": self.topic,
             "participants": {
@@ -576,46 +600,91 @@ class AsyncDebate_and_Judge:
     # ---------------------------
     #
     async def judge_round_async(self, round_num: int, round_entries: List[Dict]) -> Dict[str, Any]:
-        """Judge a single round with both original and switched response orders"""
+        """Judge a single round with session-based evaluation and order switching"""
         
-        print(f"Judging round {round_num} with order switching...")
+        print(f"Judging round {round_num} with session-based evaluation...")
         
-        # Get the two responses for this round
-        responses = self._extract_responses_from_round(round_entries)
+        # Extract the two question-answer sessions from this round
+        session_1 = self._extract_session_1(round_entries)  # A asks, A+B answer
+        session_2 = self._extract_session_2(round_entries)  # B asks, B+A answer
         
-        if len(responses) != 2:
-            print(f"Warning: Expected 2 responses for round {round_num}, got {len(responses)}")
+        if not session_1 or not session_2:
+            print(f"Warning: Could not extract both sessions for round {round_num}")
             return {
-                "error": f"Invalid number of responses: {len(responses)}",
+                "error": "Invalid session extraction",
                 "round_num": round_num
             }
         
-        # Judge with original order (A first, B second)
-        print(f"  Judging round {round_num} with original order (A first, B second)...")
-        original_judgments = await self._judge_responses_with_order(
-            round_num, responses, order="original"
-        )
+        # Judge Session 1 (A's question)
+        print(f"  Judging round {round_num} session 1 (A asks question)...")
+        print(f"    Judging round {round_num} session 1 with original order (A first, B second)...")
+        session_1_original = await self._judge_session_with_order(round_num, session_1, "original", "session_1")
+        print(f"    Judging round {round_num} session 1 with switched order (B first, A second)...")
+        session_1_switched = await self._judge_session_with_order(round_num, session_1, "switched", "session_1")
         
-        # Judge with switched order (B first, A second)
-        print(f"  Judging round {round_num} with switched order (B first, A second)...")
-        switched_judgments = await self._judge_responses_with_order(
-            round_num, responses, order="switched"
-        )
+        # Judge Session 2 (B's question)
+        print(f"  Judging round {round_num} session 2 (B asks question)...")
+        print(f"    Judging round {round_num} session 2 with original order (B first, A second)...")
+        session_2_original = await self._judge_session_with_order(round_num, session_2, "original", "session_2")
+        print(f"    Judging round {round_num} session 2 with switched order (A first, B second)...")
+        session_2_switched = await self._judge_session_with_order(round_num, session_2, "switched", "session_2")
         
-        # Combine and average the results
-        combined_judgments = self._combine_judgment_results(
-            original_judgments, switched_judgments, round_num
-        )
+        # Combine results for each session
+        session_1_combined = self._combine_session_results(session_1_original, session_1_switched, round_num, "session_1")
+        print(f"  Round {round_num} session 1 judging completed with order bias analysis")
+        
+        session_2_combined = self._combine_session_results(session_2_original, session_2_switched, round_num, "session_2")
+        print(f"  Round {round_num} session 2 judging completed with order bias analysis")
         
         # Store in results
-        self.results["round_judgments"][round_num] = combined_judgments
+        combined_results = {
+            "session_1_judgment": session_1_combined,
+            "session_2_judgment": session_2_combined,
+            "round_summary": self._summarize_round_results(session_1_combined, session_2_combined)
+        }
         
-        print(f"Round {round_num} judging completed with order bias analysis")
+        self.results["round_judgments"][round_num] = combined_results
         
-        return combined_judgments
+        print(f"Round {round_num} judging completed with session-based analysis")
+        
+        return combined_results
+
+    def _extract_session_1(self, round_entries: List[Dict]) -> Dict[str, str]:
+        """Extract session 1: A asks question, A and B both answer"""
+        session = {}
+        
+        for entry in round_entries:
+            if entry["step"] == 1 and entry["role"] == "challenger" and entry["participant"] == self.model_a_id:
+                session["question"] = entry["response"]
+            elif entry["step"] == 2 and entry["role"] == "responder_self" and entry["participant"] == self.model_a_id:
+                session["A_answer"] = entry["response"]
+            elif entry["step"] == 3 and entry["role"] == "responder" and entry["participant"] == self.model_b_id:
+                session["B_answer"] = entry["response"]
+        
+        # Verify we have all components
+        if len(session) == 3 and "question" in session and "A_answer" in session and "B_answer" in session:
+            return session
+        return None
+    
+    def _extract_session_2(self, round_entries: List[Dict]) -> Dict[str, str]:
+        """Extract session 2: B asks question, B and A both answer"""
+        session = {}
+        
+        for entry in round_entries:
+            if entry["step"] == 4 and entry["role"] == "challenger" and entry["participant"] == self.model_b_id:
+                session["question"] = entry["response"]
+            elif entry["step"] == 5 and entry["role"] == "responder_self" and entry["participant"] == self.model_b_id:
+                session["B_answer"] = entry["response"]
+            elif entry["step"] == 6 and entry["role"] == "responder" and entry["participant"] == self.model_a_id:
+                session["A_answer"] = entry["response"]
+        
+        # Verify we have all components
+        if len(session) == 3 and "question" in session and "A_answer" in session and "B_answer" in session:
+            return session
+        return None
 
     def _extract_responses_from_round(self, round_entries: List[Dict]) -> Dict[str, str]:
-        """Extract the two responses from a round"""
+        """Extract the two responses from a round (legacy method)"""
         responses = {}
         
         for entry in round_entries:
@@ -628,8 +697,26 @@ class AsyncDebate_and_Judge:
         
         return responses
 
+    def _create_ordered_session_transcript(self, session: Dict[str, str], first: str, second: str) -> str:
+        """Create session transcript with responses in specified order"""
+        
+        if first == "A":
+            first_response = session.get("A_answer", "")
+            second_response = session.get("B_answer", "")
+        else:
+            first_response = session.get("B_answer", "")
+            second_response = session.get("A_answer", "")
+        
+        transcript = f"""Model {first} Response:
+{first_response}
+
+Model {second} Response:
+{second_response}"""
+        
+        return transcript
+
     def _create_ordered_transcript(self, responses: Dict[str, str], first: str, second: str) -> str:
-        """Create transcript with responses in specified order"""
+        """Create transcript with responses in specified order (legacy method)"""
         
         first_response = responses.get(first, "")
         second_response = responses.get(second, "")
@@ -663,6 +750,169 @@ Model {second} Response:
             "consistency_score": 1.0 - (abs(original_diff - switched_diff) / max(original_diff + switched_diff, 1))
         }
 
+    async def _judge_session_with_order(self, round_num: int, session: Dict[str, str], order: str, session_name: str) -> Dict[str, Any]:
+        """Judge a question-answer session with specific order (original or switched)"""
+        
+        # Determine chronological order based on which session this is
+        if session_name == "session_1":
+            # Session 1: A asks, A answers first (step 2), B answers second (step 3)
+            if order == "original":
+                ordered_responses = self._create_ordered_session_transcript(session, "A", "B")
+                order_suffix = "original"
+            else:
+                ordered_responses = self._create_ordered_session_transcript(session, "B", "A") 
+                order_suffix = "switched"
+        else:  # session_2
+            # Session 2: B asks, B answers first (step 5), A answers second (step 6)
+            if order == "original":
+                ordered_responses = self._create_ordered_session_transcript(session, "B", "A")
+                order_suffix = "original"
+            else:
+                ordered_responses = self._create_ordered_session_transcript(session, "A", "B")
+                order_suffix = "switched"
+        
+        # Judge with this order
+        session_judgments = {}
+        session_votes = {self.model_a_id: 0, self.model_b_id: 0}
+        
+        for judge in self.judges:
+            # Build the prompt with question and ordered responses
+            prompt = self.session_prompt_template.format(
+                topic=self.topic,
+                question=session["question"],
+                response_criteria="\n".join([f"- {criterion}" for criterion in self.response_criteria]),
+                responses=ordered_responses
+            )
+            
+            judge_context = {
+                "system_prompt": (
+                    "You are an expert judge evaluating AI model responses to a specific question. Your goal is to identify superior reasoning and expertise "
+                    "in the context of the given question. Advanced models often provide more sophisticated, detailed analysis that should be rewarded. "
+                    "Focus on technical accuracy, logical depth, and problem-solving capability. Provide evaluation in exact JSON format."
+                ),
+                "input": prompt
+            }
+            
+            try:
+                judgment_raw = await asyncio.wait_for(
+                    judge.generate_response_async(judge_context),
+                    timeout=90,
+                )
+            except asyncio.TimeoutError:
+                judgment_data = {"error": "timeout"}
+                session_judgments[judge.model_id] = judgment_data
+                # Save individual timeout result
+                self.save_individual_judgment(judge.model_id, round_num, judgment_data, order_suffix, session_name)
+                continue
+            
+            try:
+                judgment = self.parser.parse(judgment_raw)
+                judgment_data = judgment.dict()
+                session_judgments[judge.model_id] = judgment_data
+                
+                # Save individual result
+                self.save_individual_judgment(judge.model_id, round_num, judgment_data, order_suffix, session_name)
+                
+                # Tally votes (need to map back to original A/B if order was switched)
+                if order == "original":
+                    winner = judgment.winner
+                else:
+                    # If order was switched, swap A/B back
+                    winner = "B" if judgment.winner == "A" else "A"
+                
+                if winner == "A":
+                    session_votes[self.model_a_id] += 1
+                elif winner == "B":
+                    session_votes[self.model_b_id] += 1
+                    
+            except Exception as e:
+                judgment_data = {
+                    "raw_judgment": judgment_raw,
+                    "parse_error": str(e)
+                }
+                session_judgments[judge.model_id] = judgment_data
+                self.save_individual_judgment(judge.model_id, round_num, judgment_data, order_suffix, session_name)
+        
+        return {
+            "judgments": session_judgments,
+            "votes": session_votes,
+            "order": order,
+            "question": session["question"]
+        }
+
+    def _combine_session_results(self, original: Dict, switched: Dict, round_num: int, session_name: str) -> Dict[str, Any]:
+        """Combine results from both orders for a session"""
+        
+        # Combine votes
+        combined_votes = {
+            self.model_a_id: original["votes"][self.model_a_id] + switched["votes"][self.model_a_id],
+            self.model_b_id: original["votes"][self.model_b_id] + switched["votes"][self.model_b_id]
+        }
+        
+        # Determine winner
+        if combined_votes[self.model_a_id] > combined_votes[self.model_b_id]:
+            session_winner = self.model_a_id
+        elif combined_votes[self.model_a_id] < combined_votes[self.model_b_id]:
+            session_winner = self.model_b_id
+        else:
+            session_winner = "tie"
+        
+        return {
+            "judgments": {
+                "original_order": original["judgments"],
+                "switched_order": switched["judgments"]
+            },
+            "votes": combined_votes,
+            "winner": session_winner,
+            "question": original["question"],
+            "session_name": session_name,
+            "order_analysis": {
+                "original_votes": original["votes"],
+                "switched_votes": switched["votes"],
+                "order_bias_detected": self._detect_order_bias(original, switched)
+            }
+        }
+
+    def _summarize_round_results(self, session_1: Dict[str, Any], session_2: Dict[str, Any]) -> Dict[str, Any]:
+        """Summarize results across both sessions of a round"""
+        
+        # Count session wins
+        session_wins = {self.model_a_id: 0, self.model_b_id: 0}
+        
+        if session_1["winner"] == self.model_a_id:
+            session_wins[self.model_a_id] += 1
+        elif session_1["winner"] == self.model_b_id:
+            session_wins[self.model_b_id] += 1
+            
+        if session_2["winner"] == self.model_a_id:
+            session_wins[self.model_a_id] += 1
+        elif session_2["winner"] == self.model_b_id:
+            session_wins[self.model_b_id] += 1
+        
+        # Determine overall round winner
+        if session_wins[self.model_a_id] > session_wins[self.model_b_id]:
+            round_winner = self.model_a_id
+        elif session_wins[self.model_a_id] < session_wins[self.model_b_id]:
+            round_winner = self.model_b_id
+        else:
+            round_winner = "tie"
+        
+        # Total votes across both sessions
+        total_votes = {
+            self.model_a_id: session_1["votes"][self.model_a_id] + session_2["votes"][self.model_a_id],
+            self.model_b_id: session_1["votes"][self.model_b_id] + session_2["votes"][self.model_b_id]
+        }
+        
+        return {
+            "round_winner": round_winner,
+            "session_wins": session_wins,
+            "total_votes": total_votes,
+            "sessions_summary": {
+                "session_1_winner": session_1["winner"],
+                "session_2_winner": session_2["winner"]
+            }
+        }
+
     async def _judge_responses_with_order(self, round_num: int, responses: Dict[str, str], order: str) -> Dict[str, Any]:
         """Judge responses with specific order (original or switched)"""
         
@@ -679,7 +929,6 @@ Model {second} Response:
         # Judge with this order
         round_judgments = {}
         round_votes = {self.model_a_id: 0, self.model_b_id: 0}
-        round_q_votes = {self.model_a_id: 0, self.model_b_id: 0}
         
         for judge in self.judges:
             # Build the prompt with ordered transcript
@@ -721,21 +970,14 @@ Model {second} Response:
                 # Tally votes (need to map back to original A/B if order was switched)
                 if order == "original":
                     winner = judgment.winner
-                    better_question = judgment.better_question
                 else:
                     # If order was switched, swap A/B back
                     winner = "B" if judgment.winner == "A" else "A"
-                    better_question = "B" if judgment.better_question == "A" else "A"
                 
                 if winner == "A":
                     round_votes[self.model_a_id] += 1
                 elif winner == "B":
                     round_votes[self.model_b_id] += 1
-                
-                if better_question == "A":
-                    round_q_votes[self.model_a_id] += 1
-                elif better_question == "B":
-                    round_q_votes[self.model_b_id] += 1
                     
             except Exception as e:
                 judgment_data = {
@@ -748,12 +990,11 @@ Model {second} Response:
         return {
             "judgments": round_judgments,
             "votes": round_votes,
-            "question_votes": round_q_votes,
             "order": order
         }
 
     def _combine_judgment_results(self, original: Dict, switched: Dict, round_num: int) -> Dict[str, Any]:
-        """Combine results from both orders"""
+        """Combine results from both orders (legacy method)"""
         
         # Combine votes
         combined_votes = {
@@ -761,25 +1002,13 @@ Model {second} Response:
             self.model_b_id: original["votes"][self.model_b_id] + switched["votes"][self.model_b_id]
         }
         
-        combined_q_votes = {
-            self.model_a_id: original["question_votes"][self.model_a_id] + switched["question_votes"][self.model_a_id],
-            self.model_b_id: original["question_votes"][self.model_b_id] + switched["question_votes"][self.model_b_id]
-        }
-        
-        # Determine winners
+        # Determine winner
         if combined_votes[self.model_a_id] > combined_votes[self.model_b_id]:
             round_winner = self.model_a_id
         elif combined_votes[self.model_a_id] < combined_votes[self.model_b_id]:
             round_winner = self.model_b_id
         else:
             round_winner = "tie"
-        
-        if combined_q_votes[self.model_a_id] > combined_q_votes[self.model_b_id]:
-            better_question_asker = self.model_a_id
-        elif combined_q_votes[self.model_a_id] < combined_q_votes[self.model_b_id]:
-            better_question_asker = self.model_b_id
-        else:
-            better_question_asker = "tie"
         
         return {
             "judgments": {
@@ -788,8 +1017,6 @@ Model {second} Response:
             },
             "votes": combined_votes,
             "winner": round_winner,
-            "question_votes": combined_q_votes,
-            "better_question_asker": better_question_asker,
             "order_analysis": {
                 "original_votes": original["votes"],
                 "switched_votes": switched["votes"],

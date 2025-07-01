@@ -54,7 +54,7 @@ detailed_instruction_sets = [
 ]
 
 # -------------- Helper: run *one* debate spec -----------------------------
-async def run_single_debate(model_a_id, model_b_id, rounds=9):
+async def run_single_debate(model_a_id, model_b_id, rounds=1):
     debaters = [
         ModelParticipant(model_a_id, role="debater"),
         ModelParticipant(model_b_id, role="debater")
