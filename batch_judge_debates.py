@@ -41,11 +41,20 @@ async def judge_single_debate(debate_file_path: str, judge_participants: List[Mo
         with open(debate_file_path, 'r', encoding='utf-8') as f:
             debate_data = json.load(f)
         
-        participants = debate_data.get("participants", [])
-        if len(participants) != 2:
-            return {"error": "invalid_participants", "file": debate_file_path, "details": f"Found {len(participants)} participants"}
+        participants = debate_data.get("participants", {})
         
-        model_a_id, model_b_id = participants
+        # Handle both formats: list ["model1", "model2"] or dict {"model_a": "model1", "model_b": "model2"}
+        if isinstance(participants, list):
+            if len(participants) != 2:
+                return {"error": "invalid_participants", "file": debate_file_path, "details": f"Found {len(participants)} participants"}
+            model_a_id, model_b_id = participants
+        elif isinstance(participants, dict):
+            if "model_a" not in participants or "model_b" not in participants:
+                return {"error": "invalid_participants", "file": debate_file_path, "details": f"Missing model_a or model_b in participants"}
+            model_a_id = participants["model_a"]
+            model_b_id = participants["model_b"]
+        else:
+            return {"error": "invalid_participants", "file": debate_file_path, "details": f"Participants format not recognized: {type(participants)}"}
         transcript = debate_data.get("transcript", [])
         
         if not transcript:
@@ -57,10 +66,17 @@ async def judge_single_debate(debate_file_path: str, judge_participants: List[Mo
         except (ValueError, TypeError):
             rounds = 3  # Default fallback
         
-        # Create mock participants for AsyncDebate_and_Judge
+        # Create dummy participants (we don't need actual models for judging)
+        # We'll create a simple class that mimics ModelParticipant for AsyncDebate_and_Judge
+        class DummyParticipant:
+            def __init__(self, model_id, role="participant"):
+                self.model_id = model_id
+                self.role = role
+                self.history = []
+        
         mock_participants = [
-            ModelParticipant(model_a_id, role="participant"),
-            ModelParticipant(model_b_id, role="participant")
+            DummyParticipant(model_a_id, role="participant"),
+            DummyParticipant(model_b_id, role="participant")
         ]
         
         # Use provided instruction_set or infer from data/folder
