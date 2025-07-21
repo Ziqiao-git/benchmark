@@ -79,7 +79,7 @@ def process_round_votes(round_votes):
 def process_debate_file(debate_path, failed_pairs, elo_ratings):
     """
     Reads one debate file, updates `elo_ratings` in-place
-    for each round. Skips if in failed_pairs or if error/truncated.
+    for each round. Handles both old format and new session-based format.
     """
     fname = os.path.basename(debate_path)
     if not fname.startswith("debate_") or not fname.endswith(".json"):
@@ -106,9 +106,27 @@ def process_debate_file(debate_path, failed_pairs, elo_ratings):
     if not round_judgments:
         return  # no rounds
 
-    # Process each round
+    # Process each round - handle both old and new session-based format
     for round_num_str, round_info in round_judgments.items():
-        votes = round_info.get("votes", {})
+        # Check if this is the new session-based format
+        if "round_summary" in round_info and "total_votes" in round_info["round_summary"]:
+            # New format: use aggregated votes from round_summary
+            votes = round_info["round_summary"]["total_votes"]
+        elif "votes" in round_info:
+            # Old format: use votes directly
+            votes = round_info["votes"]
+        else:
+            # Try to aggregate session votes if round_summary is missing
+            votes = {}
+            for session_key, session_data in round_info.items():
+                if session_key.endswith("_judgment") and "votes" in session_data:
+                    session_votes = session_data["votes"]
+                    for model, count in session_votes.items():
+                        votes[model] = votes.get(model, 0) + count
+        
+        if not votes:
+            continue  # skip if no votes found
+            
         winner, loser = process_round_votes(votes)
         if winner is None and loser is None:
             # tie or invalid
@@ -120,6 +138,7 @@ def process_debate_file(debate_path, failed_pairs, elo_ratings):
                 newA, newB = update_elo(rA, rB, 0.5, 0.5, K_FACTOR)
                 elo_ratings[mA] = newA
                 elo_ratings[mB] = newB
+                print(f"  Round {round_num_str}: {mA} vs {mB} -> TIE ({vA}-{vB})")
         else:
             # winner vs loser
             rW = elo_ratings[winner]
@@ -127,6 +146,9 @@ def process_debate_file(debate_path, failed_pairs, elo_ratings):
             newW, newL = update_elo(rW, rL, 1.0, 0.0, K_FACTOR)
             elo_ratings[winner] = newW
             elo_ratings[loser] = newL
+            winner_votes = votes[winner]
+            loser_votes = votes[loser]
+            print(f"  Round {round_num_str}: {winner} beats {loser} ({winner_votes}-{loser_votes})")
 
 def write_elo_file(elo_dict, out_path):
     """
@@ -171,8 +193,11 @@ def main():
     if args.folders:
         folders = args.folders
     else:
-        NUM_FOLDERS = 10
-        folders = [f"Math_3R_5J_{i}" for i in range(1, NUM_FOLDERS + 1)]
+        # Default: look for test_results_* folders
+        folders = [d for d in os.listdir(base_dir) if d.startswith("test_results_") and os.path.isdir(os.path.join(base_dir, d))]
+        if not folders:
+            print("No test_results_* folders found. Please specify --folders explicitly.")
+            return
     
     # Determine which passes to run
     if args.standalone or args.aggregator:
@@ -194,19 +219,25 @@ def main():
                 print(f"[Aggregator] Folder not found: {folder_path}, skipping...")
                 continue
 
+            print(f"[Aggregator] Processing folder: {folder_name}")
+
             # Load state.json for failed pairs
             failed_pairs_path = os.path.join(folder_path, "state.json")
             failed_pairs = []
             if os.path.isfile(failed_pairs_path):
-                with open(failed_pairs_path, "r", encoding="utf-8") as f:
-                    state_data = json.load(f)
-                    failed_pairs = state_data.get("failed_pairs", [])
+                try:
+                    with open(failed_pairs_path, "r", encoding="utf-8") as f:
+                        state_data = json.load(f)
+                        failed_pairs = state_data.get("failed_pairs", [])
+                except Exception as e:
+                    print(f"  Warning: Could not load state.json: {e}")
 
             # Process each debate JSON in that folder
-            for fname in os.listdir(folder_path):
-                if fname.endswith(".json") and fname.startswith("debate_"):
-                    debate_path = os.path.join(folder_path, fname)
-                    process_debate_file(debate_path, failed_pairs, aggregator_elo)
+            debate_files = [f for f in os.listdir(folder_path) if f.endswith(".json") and f.startswith("debate_")]
+            for fname in debate_files:
+                print(f"  Processing: {fname}")
+                debate_path = os.path.join(folder_path, fname)
+                process_debate_file(debate_path, failed_pairs, aggregator_elo)
 
             # After processing folder, write aggregator results for folder
             aggregator_folder_out = os.path.join(folder_path, "folder_elo_scores_aggregated.json")
@@ -226,6 +257,8 @@ def main():
                 print(f"[Standalone] Folder not found: {folder_path}, skipping...")
                 continue
 
+            print(f"[Standalone] Processing folder: {folder_name}")
+
             # Reset fresh Elo for each folder
             standalone_elo = {m: 1200 for m in MODELS}
 
@@ -233,15 +266,19 @@ def main():
             failed_pairs_path = os.path.join(folder_path, "state.json")
             failed_pairs = []
             if os.path.isfile(failed_pairs_path):
-                with open(failed_pairs_path, "r", encoding="utf-8") as f:
-                    state_data = json.load(f)
-                    failed_pairs = state_data.get("failed_pairs", [])
+                try:
+                    with open(failed_pairs_path, "r", encoding="utf-8") as f:
+                        state_data = json.load(f)
+                        failed_pairs = state_data.get("failed_pairs", [])
+                except Exception as e:
+                    print(f"  Warning: Could not load state.json: {e}")
 
             # Process each debate JSON *just* for that folder
-            for fname in os.listdir(folder_path):
-                if fname.endswith(".json") and fname.startswith("debate_"):
-                    debate_path = os.path.join(folder_path, fname)
-                    process_debate_file(debate_path, failed_pairs, standalone_elo)
+            debate_files = [f for f in os.listdir(folder_path) if f.endswith(".json") and f.startswith("debate_")]
+            for fname in debate_files:
+                print(f"  Processing: {fname}")
+                debate_path = os.path.join(folder_path, fname)
+                process_debate_file(debate_path, failed_pairs, standalone_elo)
 
             # Write out the standalone result for folder
             standalone_out = os.path.join(folder_path, "folder_elo_scores_standalone.json")
