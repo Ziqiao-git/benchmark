@@ -43,19 +43,31 @@ async def judge_single_debate(debate_file_path: str, judge_participants: List[Mo
         
         participants = debate_data.get("participants", {})
         
-        # Handle both formats: list ["model1", "model2"] or dict {"model_a": "model1", "model_b": "model2"}
-        if isinstance(participants, list):
-            if len(participants) != 2:
-                return {"error": "invalid_participants", "file": debate_file_path, "details": f"Found {len(participants)} participants"}
+        # Handle multiple formats: list, dict, or extract from transcript
+        if isinstance(participants, list) and len(participants) == 2:
             model_a_id, model_b_id = participants
-        elif isinstance(participants, dict):
-            if "model_a" not in participants or "model_b" not in participants:
-                return {"error": "invalid_participants", "file": debate_file_path, "details": f"Missing model_a or model_b in participants"}
+        elif isinstance(participants, dict) and "model_a" in participants and "model_b" in participants:
             model_a_id = participants["model_a"]
             model_b_id = participants["model_b"]
         else:
-            return {"error": "invalid_participants", "file": debate_file_path, "details": f"Participants format not recognized: {type(participants)}"}
-        transcript = debate_data.get("transcript", [])
+            # Extract participants from transcript (for debate_*.json files)
+            transcript = debate_data.get("transcript", [])
+            if not transcript:
+                return {"error": "no_transcript_and_no_participants", "file": debate_file_path}
+            
+            # Get unique participants from transcript
+            transcript_participants = list(set(entry.get("participant") for entry in transcript if entry.get("participant")))
+            transcript_participants = [p for p in transcript_participants if p]  # Remove None values
+            
+            if len(transcript_participants) != 2:
+                return {"error": "invalid_participants", "file": debate_file_path, "details": f"Found {len(transcript_participants)} participants in transcript: {transcript_participants}"}
+            
+                        # Sort participants for consistency
+            model_a_id, model_b_id = sorted(transcript_participants)
+        
+        # Get transcript if not already loaded  
+        if 'transcript' not in locals():
+            transcript = debate_data.get("transcript", [])
         
         if not transcript:
             return {"error": "no_transcript", "file": debate_file_path}
@@ -137,7 +149,7 @@ async def process_folder(folder_path: str, judge_participants: List[ModelPartici
     
     # Find debate files using multiple patterns
     debate_files = []
-    patterns = ["debate_*.json", "debate_results_*.json"]
+    patterns = ["debate_results_*.json"]
     for pattern in patterns:
         debate_files.extend(list(Path(folder_path).glob(pattern)))
     
